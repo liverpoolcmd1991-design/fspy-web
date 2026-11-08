@@ -54,6 +54,8 @@ import {
   WallReliefArchType
 } from '../../solver/scene-reconstruction'
 import {
+  SceneToolId,
+  SidebarTabId,
   ThreeProxyPreset,
   useFSpyStore
 } from '../../store/use-fspy-store'
@@ -76,7 +78,6 @@ import {
   Plus,
   RotateCcw,
   Ruler,
-  Sliders,
   Sparkles,
   Sun,
   Trash2,
@@ -135,10 +136,12 @@ export default function SettingsPanel() {
   const textureUnwarp = useFSpyStore((s) => s.textureUnwarp)
   const pbrMaterialConfig = useFSpyStore((s) => s.pbrMaterialConfig)
   const parallaxAnimator = useFSpyStore((s) => s.parallaxAnimator)
+  const activeSidebarTab = useFSpyStore((s) => s.activeSidebarTab)
+  const activeSceneTool = useFSpyStore((s) => s.activeSceneTool)
 
   const [pbrMaps, setPbrMaps] = useState<PBRGeneratedMaps | null>(null)
   const [recordingVideo, setRecordingVideo] = useState(false)
-  const [aiBridgeOpen, setAiBridgeOpen] = useState(false)
+  const [aiBridgeOpen, setAiBridgeOpen] = useState(true)
   const [aiJsonInput, setAiJsonInput] = useState('')
   const [aiParseError, setAiParseError] = useState<string | null>(null)
   const pbrCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -260,6 +263,11 @@ export default function SettingsPanel() {
   const setTextureUnwarp = useFSpyStore((s) => s.setTextureUnwarp)
   const setPBRMaterialConfig = useFSpyStore((s) => s.setPBRMaterialConfig)
   const setParallaxAnimator = useFSpyStore((s) => s.setParallaxAnimator)
+  const setActiveSidebarTab = useFSpyStore((s) => s.setActiveSidebarTab)
+  const activateSceneToolAndEnable = useFSpyStore(
+    (s) => s.activateSceneToolAndEnable
+  )
+  const setActiveModal = useFSpyStore((s) => s.setActiveModal)
   const showToast = useFSpyStore((s) => s.showToast)
 
   const is1VPMode = globalSettings.calibrationMode === CalibrationMode.OneVanishingPoint
@@ -556,8 +564,155 @@ export default function SettingsPanel() {
   const vp2Count = controlPointsState2VP.secondVanishingPoint.lineSegments.length
   const vp3Count = controlPointsState2VP.thirdVanishingPoint.lineSegments.length
 
+  const sceneToolsPalette: {
+    id: SceneToolId
+    label: string
+    shortHint: string
+    count?: number
+    accent: string
+    onQuickAdd?: () => void
+    quickAddLabel?: string
+  }[] = [
+    {
+      id: 'room',
+      label: 'Room & Trim',
+      shortHint:
+        'Adjust Room Width X, Depth Y & Height Z sliders until the 3D room box fits your photo corners. Enable optional Vaulted Ceiling or 45° Trim below.',
+      accent: 'border-sky-500/40 text-sky-300 bg-sky-500/10'
+    },
+    {
+      id: 'boxes',
+      label: '3D Boxes',
+      shortHint:
+        'Drag the yellow "XY Move" handle on the floor, "W" & "D" to resize width/depth, and pull the blue "Z↑" handle up to match object height.',
+      count: sceneBlockout.volumes.length,
+      accent: 'border-amber-500/40 text-amber-300 bg-amber-500/10',
+      onQuickAdd: () => addBlockoutVolume(),
+      quickAddLabel: '+ New Box'
+    },
+    {
+      id: 'billboards',
+      label: 'Cutout Standees',
+      shortHint:
+        'Drag the green polygon points (P1..P6) around any person, plant, chair, or curved prop. Its bottom edge automatically stands on the 3D floor.',
+      count: sceneBlockout.billboardsEnabled ? sceneBlockout.billboards.length : 0,
+      accent: 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10',
+      onQuickAdd: () => addBillboardCutout(),
+      quickAddLabel: '+ New Cutout'
+    },
+    {
+      id: 'reliefs',
+      label: 'Doors & Portals',
+      shortHint:
+        'Drag the 4 cyan corners (TL, TR, BR, BL) around a doorway, arched window, or alcove. Check "Punch Open Portal" to cut a real pass-through doorway!',
+      count: sceneBlockout.wallReliefsEnabled ? sceneBlockout.wallReliefs.length : 0,
+      accent: 'border-cyan-500/40 text-cyan-300 bg-cyan-500/10',
+      onQuickAdd: () => addWallReliefExtrusion(),
+      quickAddLabel: '+ Door / Arch'
+    },
+    {
+      id: 'stairs',
+      label: '3D Stairs',
+      shortHint:
+        'Drag "Stair Base XY" to the bottom step on the floor, "Run" & "W" for size, and "Top H↑" to the top landing. Supports Straight, L, U & Spiral!',
+      count: sceneBlockout.staircasesEnabled ? sceneBlockout.staircases.length : 0,
+      accent: 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10',
+      onQuickAdd: () => addStaircaseExtrusion(),
+      quickAddLabel: '+ Add Stairs'
+    },
+    {
+      id: 'rails',
+      label: 'Handrails/Cables',
+      shortHint:
+        'Drag "Rail P1" and "Rail P2" along any wall handrail, pipe, or hanging cable. Click "+ Bend" to add 90° elbow corners.',
+      count: sceneBlockout.sweptRailsEnabled ? sceneBlockout.sweptRails.length : 0,
+      accent: 'border-rose-500/40 text-rose-300 bg-rose-500/10',
+      onQuickAdd: () => addSweptWallRail(),
+      quickAddLabel: '+ Add Rail'
+    },
+    {
+      id: 'columns',
+      label: '3-Sweep Pillars',
+      shortHint:
+        'Drag "Base L" and "Base R" across the bottom of the column on the floor, and drag "T↑" to the top center of the column.',
+      count: sceneBlockout.sweptColumnsEnabled ? sceneBlockout.sweptColumns.length : 0,
+      accent: 'border-yellow-500/40 text-yellow-300 bg-yellow-500/10',
+      onQuickAdd: () => addSweptCylinderColumn(),
+      quickAddLabel: '+ Add Pillar'
+    },
+    {
+      id: 'wall-cutouts',
+      label: 'Iron Grilles',
+      shortHint:
+        'Drag the 4 purple corners (TL, TR, BR, BL) around an ornate railing, radiator, or wall grille to float it off the wall with transparent gaps.',
+      count: sceneBlockout.wallCutoutsEnabled ? sceneBlockout.wallCutouts.length : 0,
+      accent: 'border-purple-500/40 text-purple-300 bg-purple-500/10',
+      onQuickAdd: () => addWallParallelCutout(),
+      quickAddLabel: '+ Add Grille'
+    },
+    {
+      id: 'prisms',
+      label: 'Floor Polygons',
+      shortHint:
+        'Drag the orange floor corners (F1..FN) around any L-shaped counter, bay window, or island, then pull "Z↑" on the photo to extrude height.',
+      count: sceneBlockout.floorPrismsEnabled
+        ? (sceneBlockout.floorPrisms ?? []).length
+        : 0,
+      accent: 'border-orange-500/40 text-orange-300 bg-orange-500/10',
+      onQuickAdd: () => addFloorPolygonPrism(),
+      quickAddLabel: '+ Add Prism'
+    },
+    {
+      id: 'lathe',
+      label: '360° Lathe',
+      shortHint:
+        'Drag "Center" to the bottom middle, "Radius R" to the outer edge, and "Top H↑" to spin a 360° table, urn, or classical column.',
+      count: sceneBlockout.latheObjectsEnabled
+        ? (sceneBlockout.latheObjects ?? []).length
+        : 0,
+      accent: 'border-pink-500/40 text-pink-300 bg-pink-500/10',
+      onQuickAdd: () => addRevolvedLatheObject(),
+      quickAddLabel: '+ Add Lathe'
+    },
+    {
+      id: 'coffers',
+      label: 'Coffer Grids',
+      shortHint:
+        'Drag the 4 indigo corners (TL, TR, BR, BL) around a ceiling or paneled wall to subdivide it into a 3D Rows × Cols coffered grid.',
+      count: sceneBlockout.cofferedArraysEnabled
+        ? (sceneBlockout.cofferedArrays ?? []).length
+        : 0,
+      accent: 'border-indigo-500/40 text-indigo-300 bg-indigo-500/10',
+      onQuickAdd: () => addCofferedPanelArray(),
+      quickAddLabel: '+ Add Grid'
+    },
+    {
+      id: 'curved-walls',
+      label: 'Curved Walls',
+      shortHint:
+        'Drag "Arc Start", "Arc Apex" (middle bend), and "Arc End" on the floor, then pull "Z↑" to extrude a smooth curved 3D wall.',
+      count: sceneBlockout.curvedWallsEnabled
+        ? (sceneBlockout.curvedWalls ?? []).length
+        : 0,
+      accent: 'border-teal-500/40 text-teal-300 bg-teal-500/10',
+      onQuickAdd: () => addCurvedArcWall(),
+      quickAddLabel: '+ Curved Wall'
+    },
+    {
+      id: 'ai-bridge',
+      label: 'AI Auto-Build',
+      shortHint:
+        'Copy our calibrated prompt, paste into ChatGPT/Claude/Gemini with your photo, and paste the JSON reply back to auto-build the 3D scene.',
+      accent: 'border-indigo-400/50 text-indigo-200 bg-indigo-500/15'
+    }
+  ]
+
+  const currentSceneToolMeta =
+    sceneToolsPalette.find((t) => t.id === activeSceneTool) ??
+    sceneToolsPalette[1]
+
   return (
-    <aside className='w-68 shrink-0 bg-[#141418] border-r border-zinc-800/80 flex flex-col h-full overflow-y-auto select-none'>
+    <aside className='w-76 shrink-0 bg-[#141418] border-r border-zinc-800/80 flex flex-col h-full overflow-hidden select-none'>
       {/* Hidden input for custom .glb / .gltf / .obj 3D models */}
       <input
         ref={modelInputRef}
@@ -576,14 +731,111 @@ export default function SettingsPanel() {
         }}
       />
 
-      <div className='px-3.5 py-2.5 border-b border-zinc-800/80 flex items-center justify-between'>
-        <span className='text-[11px] font-semibold uppercase tracking-wider text-zinc-400'>
-          Calibration Setup
-        </span>
-        <span className='text-[10px] font-mono text-zinc-500'>
-          {is1VPMode ? '1-Point' : '2-Point'}
-        </span>
+      {/* Sticky 4-Stage Workflow Tab Bar */}
+      <div className='p-2 bg-[#0e1015] border-b border-zinc-800/90 space-y-1.5 shrink-0'>
+        <div className='flex items-center justify-between px-1'>
+          <span className='text-[10.5px] font-semibold uppercase tracking-wider text-zinc-300'>
+            Workflow Stages
+          </span>
+          <button
+            type='button'
+            onClick={() => setActiveModal('guide')}
+            className='text-[10px] font-medium text-emerald-400 hover:text-emerald-300 cursor-pointer'
+          >
+            Visual Guide ?
+          </button>
+        </div>
+
+        <div className='grid grid-cols-4 gap-1 p-1 rounded-lg bg-zinc-950 border border-zinc-800/90'>
+          {(
+            [
+              { id: 'calibrate', step: '1', label: 'Calibrate' },
+              { id: 'scene', step: '2', label: '3D Scene' },
+              { id: 'pbr', step: '3', label: 'Unwarp' },
+              { id: 'animate', step: '4', label: 'Motion' }
+            ] as { id: SidebarTabId; step: string; label: string }[]
+          ).map((tab) => {
+            const isSel = activeSidebarTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                type='button'
+                onClick={() => setActiveSidebarTab(tab.id)}
+                className={`py-1.5 px-1 rounded-md text-center transition-all cursor-pointer ${
+                  isSel
+                    ? 'bg-amber-500 text-zinc-950 font-bold shadow-xs'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                }`}
+              >
+                <div className='text-[9px] font-mono opacity-80 leading-none'>
+                  Step {tab.step}
+                </div>
+                <div className='text-[10.5px] leading-tight mt-0.5 truncate'>
+                  {tab.label}
+                </div>
+              </button>
+            )
+          })}
+        </div>
       </div>
+
+      {/* Scrollable Stage Body */}
+      <div className='flex-1 overflow-y-auto'>
+      {activeSidebarTab === 'calibrate' && (
+        <>
+          {/* Prominent Smart Edge Snap & Quick-Start Bar at the very top of Step 1 */}
+          <div className='m-3 p-2.5 rounded-lg bg-cyan-950/25 border border-cyan-500/35 space-y-2'>
+            <div className='flex items-center justify-between'>
+              <div className='flex items-center gap-1.5 text-xs font-semibold text-cyan-300'>
+                <Magnet className='w-3.5 h-3.5 text-cyan-400' />
+                <span>Smart Edge &amp; Corner Snap</span>
+              </div>
+              <button
+                type='button'
+                onClick={() => setEdgeSnappingEnabled(!edgeSnappingEnabled)}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold transition-colors cursor-pointer ${
+                  edgeSnappingEnabled
+                    ? 'bg-cyan-400 text-zinc-950'
+                    : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border border-zinc-700'
+                }`}
+              >
+                {edgeSnappingEnabled ? 'ON (Active)' : 'OFF (Hold Alt)'}
+              </button>
+            </div>
+
+            <p className='text-[10.5px] text-zinc-300 leading-snug'>
+              Align the <span className='text-red-400 font-semibold'>Red</span> &amp;{' '}
+              <span className='text-emerald-400 font-semibold'>Green</span> lines along parallel floor/wall edges. Turn on Snap (or hold <kbd className='px-1 py-0.5 rounded bg-zinc-800 text-zinc-200 font-mono text-[9.5px]'>Alt</kbd>) to lock onto architectural lines &amp; corners.
+            </p>
+
+            <div className='grid grid-cols-2 gap-1.5 pt-0.5'>
+              <button
+                type='button'
+                onClick={() => {
+                  void handleAutoDetectLinesClick()
+                }}
+                className='flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-[11px] font-semibold text-cyan-200 transition-colors cursor-pointer'
+              >
+                <Wand2 className='w-3 h-3 text-cyan-300' />
+                <span>Auto-Find Lines</span>
+              </button>
+              <button
+                type='button'
+                onClick={() =>
+                  setShowDetectedEdgesOverlay(!showDetectedEdgesOverlay)
+                }
+                className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded border text-[11px] font-medium transition-colors cursor-pointer ${
+                  showDetectedEdgesOverlay
+                    ? 'bg-cyan-500 text-zinc-950 border-cyan-400 font-semibold'
+                    : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border-zinc-700'
+                }`}
+              >
+                <span>
+                  {showDetectedEdgesOverlay ? 'Hide Edges' : 'Show Edges'}
+                </span>
+              </button>
+            </div>
+          </div>
 
       {/* Automatic EXIF Metadata Card if detected (Opt-in Apply button) */}
       {hasExifInfo && (
@@ -837,99 +1089,121 @@ export default function SettingsPanel() {
           />
         </div>
       </div>
+      </>
+      )}
 
       {/* ===================================================================== */}
-      {/* OPT-IN STUDIO EXTENSIONS (All strictly opt-in, disabled by default)   */}
+      {/* TAB 2: GUIDED 3D SCENE BUILDER (Focused Tool Palette + Inspector)     */}
       {/* ===================================================================== */}
-      <div className='p-3.5 space-y-3 bg-[#101014]'>
-        <div className='flex items-center justify-between'>
-          <span className='text-[11px] font-semibold uppercase tracking-wider text-amber-400/90 flex items-center gap-1.5'>
-            <Sliders className='w-3 h-3' />
-            <span>Studio Extensions (Opt-In)</span>
-          </span>
-        </div>
-
-        {/* NEW: Photo-to-3D Scene Builder, Camera-Projection & Free 3D Orbit */}
-        <div className='rounded-lg border border-sky-500/30 bg-sky-950/15 p-2.5 space-y-2.5'>
+      <div className='p-3 space-y-3 bg-[#101014]'>
+        {activeSidebarTab === 'scene' && (
+        <div className='rounded-lg border border-sky-500/30 bg-sky-950/15 p-2.5 space-y-3'>
+          {/* Header + Master Enable Switch */}
           <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-1.5 text-[11px] font-semibold text-sky-300'>
+            <div className='flex items-center gap-1.5 text-xs font-semibold text-sky-300'>
               <Layers className='w-3.5 h-3.5 text-sky-400' />
-              <span>Photo-to-3D Scene Builder</span>
+              <span>3D Scene Builder</span>
             </div>
-            <span className='text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300'>
-              3D Map
-            </span>
+            <button
+              type='button'
+              onClick={() =>
+                setSceneBlockout({ enabled: !sceneBlockout.enabled })
+              }
+              className={`px-2.5 py-0.5 rounded text-[10.5px] font-mono uppercase font-bold transition-colors cursor-pointer ${
+                sceneBlockout.enabled
+                  ? 'bg-sky-400 text-zinc-950'
+                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border border-zinc-700'
+              }`}
+            >
+              {sceneBlockout.enabled ? '3D Scene ON' : 'Turn ON 3D Scene'}
+            </button>
           </div>
 
-          <Checkbox
-            title='Enable 3D room & box builder'
-            isSelected={sceneBlockout.enabled}
-            onChange={(enabled) => setSceneBlockout({ enabled })}
-          />
-
-          {sceneBlockout.enabled && (
-            <div className='pt-2 border-t border-zinc-800/80 space-y-2.5'>
-              {/* Free 3D Orbit Inspection Button */}
+          {!sceneBlockout.enabled && (
+            <div className='rounded-lg bg-zinc-950/90 border border-sky-500/30 p-3 space-y-2 text-center'>
+              <p className='text-[11px] text-zinc-300 leading-relaxed'>
+                Turn your calibrated photo into a textured 3D room with 3D boxes, doors, stairs, handrails, and pillars.
+              </p>
               <button
                 type='button'
-                onClick={() =>
-                  setSceneBlockout({
-                    freeOrbitMode: !sceneBlockout.freeOrbitMode
-                  })
-                }
-                className={`w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-semibold transition-colors cursor-pointer ${
-                  sceneBlockout.freeOrbitMode
-                    ? 'bg-sky-500 text-zinc-950'
-                    : 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-500/40'
-                }`}
+                onClick={() => activateSceneToolAndEnable(activeSceneTool)}
+                className='w-full py-2 px-3 rounded-lg bg-sky-500 hover:bg-sky-400 text-zinc-950 font-bold text-xs transition-colors cursor-pointer'
               >
-                <Orbit className='w-3.5 h-3.5' />
-                <span>
-                  {sceneBlockout.freeOrbitMode
-                    ? 'Exit Free 3D Orbit View'
-                    : 'Inspect in Free 3D Orbit'}
-                </span>
+                Start 3D Scene Builder →
               </button>
+            </div>
+          )}
 
-              <Checkbox
-                title='Project photo onto 3D surfaces'
-                isSelected={sceneBlockout.projectPhotoTexture}
-                onChange={(projectPhotoTexture) =>
-                  setSceneBlockout({ projectPhotoTexture })
-                }
-              />
-              <Checkbox
-                title='Direct viewport 3D box handles'
-                isSelected={sceneBlockout.showViewportHandles}
-                onChange={(showViewportHandles) =>
-                  setSceneBlockout({ showViewportHandles })
-                }
-              />
-              <Checkbox
-                title='Show 3D structural wireframes'
-                isSelected={sceneBlockout.wireframeOverlay}
-                onChange={(wireframeOverlay) =>
-                  setSceneBlockout({ wireframeOverlay })
-                }
-              />
+          {sceneBlockout.enabled && (
+            <div className='space-y-3'>
+              {/* STEP 1: Clear Mode Switcher: Edit Handles on Photo vs Orbit 3D View */}
+              <div className='space-y-1.5'>
+                <div className='text-[10px] font-mono uppercase tracking-wider text-zinc-400'>
+                  View Mode (Switch Anytime)
+                </div>
+                <div className='grid grid-cols-2 gap-1 p-1 rounded-lg bg-zinc-950 border border-zinc-800'>
+                  <button
+                    type='button'
+                    onClick={() =>
+                      setSceneBlockout({
+                        freeOrbitMode: false,
+                        showViewportHandles: true
+                      })
+                    }
+                    className={`py-1.5 px-2 rounded text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                      !sceneBlockout.freeOrbitMode
+                        ? 'bg-amber-500 text-zinc-950 shadow-xs'
+                        : 'text-zinc-300 hover:bg-zinc-900'
+                    }`}
+                  >
+                    <MousePointerClick className='w-3.5 h-3.5' />
+                    <span>Edit on Photo</span>
+                  </button>
+                  <button
+                    type='button'
+                    onClick={() =>
+                      setSceneBlockout({
+                        freeOrbitMode: true
+                      })
+                    }
+                    className={`py-1.5 px-2 rounded text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                      sceneBlockout.freeOrbitMode
+                        ? 'bg-sky-500 text-zinc-950 shadow-xs'
+                        : 'text-zinc-300 hover:bg-zinc-900'
+                    }`}
+                  >
+                    <Orbit className='w-3.5 h-3.5' />
+                    <span>3D Orbit View</span>
+                  </button>
+                </div>
+              </div>
 
-              {/* Opt-In #3: Automatic Foreground Occlusion Inpainting (Background De-Ghosting) */}
-              <div className='pt-1.5 border-t border-zinc-800/80 space-y-1.5'>
+              {/* Compact Display Options */}
+              <div className='bg-zinc-950/60 rounded-lg p-2 border border-zinc-800/80 space-y-1.5'>
                 <Checkbox
-                  title='Inpaint background behind 3D objects'
+                  title='Project photo texture onto 3D geometry'
+                  isSelected={sceneBlockout.projectPhotoTexture}
+                  onChange={(projectPhotoTexture) =>
+                    setSceneBlockout({ projectPhotoTexture })
+                  }
+                />
+                <Checkbox
+                  title='Show 3D wireframe outlines'
+                  isSelected={sceneBlockout.wireframeOverlay}
+                  onChange={(wireframeOverlay) =>
+                    setSceneBlockout({ wireframeOverlay })
+                  }
+                />
+                <Checkbox
+                  title='Auto-heal wall behind cutouts & boxes'
                   isSelected={sceneBlockout.inpaintOccludedBackground}
                   onChange={(inpaintOccludedBackground) =>
                     setSceneBlockout({ inpaintOccludedBackground })
                   }
                 />
                 {sceneBlockout.inpaintOccludedBackground && (
-                  <div className='flex items-center gap-2 text-[11px] pl-1'>
-                    <span
-                      className='w-16 text-zinc-400'
-                      title='Extra margin (in pixels) around foreground silhouettes to erase edge halos'
-                    >
-                      Margin
-                    </span>
+                  <div className='flex items-center gap-2 text-[11px] pl-1 pt-0.5'>
+                    <span className='w-16 text-zinc-400'>Heal Margin</span>
                     <input
                       type='range'
                       min={2}
@@ -949,7 +1223,73 @@ export default function SettingsPanel() {
                 )}
               </div>
 
-              {/* Room / Stage Shell Controls */}
+              {/* STEP 2: Visual 3D Tool Palette Grid ("Pick What to Add or Edit") */}
+              <div className='space-y-1.5 pt-1 border-t border-zinc-800/80'>
+                <div className='flex items-center justify-between'>
+                  <span className='text-[10.5px] font-semibold uppercase tracking-wider text-zinc-300'>
+                    Select 3D Tool to Edit on Photo
+                  </span>
+                  <span className='text-[9.5px] font-mono text-zinc-500'>
+                    13 Tools
+                  </span>
+                </div>
+
+                <div className='grid grid-cols-3 gap-1'>
+                  {sceneToolsPalette.map((item) => {
+                    const isSelected = activeSceneTool === item.id
+                    return (
+                      <button
+                        key={item.id}
+                        type='button'
+                        onClick={() => activateSceneToolAndEnable(item.id)}
+                        className={`relative px-1.5 py-1.5 rounded-md border text-left transition-all cursor-pointer ${
+                          isSelected
+                            ? `${item.accent} font-semibold shadow-xs ring-1 ring-white/15`
+                            : 'bg-zinc-900/90 hover:bg-zinc-800/90 border-zinc-800 text-zinc-300'
+                        }`}
+                      >
+                        <div className='text-[10px] leading-tight truncate'>
+                          {item.label}
+                        </div>
+                        {item.count !== undefined && item.count > 0 && (
+                          <span className='mt-0.5 inline-block text-[9px] font-mono px-1 rounded bg-black/40 text-zinc-200'>
+                            {item.count} active
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* STEP 3: Active Tool Instruction Banner + Quick-Add Button */}
+              <div
+                className={`rounded-lg border p-2.5 space-y-2 ${currentSceneToolMeta.accent}`}
+              >
+                <div className='flex items-center justify-between gap-2'>
+                  <span className='text-xs font-bold'>
+                    {currentSceneToolMeta.label}
+                  </span>
+                  {currentSceneToolMeta.onQuickAdd && (
+                    <button
+                      type='button'
+                      onClick={() => {
+                        activateSceneToolAndEnable(currentSceneToolMeta.id)
+                        currentSceneToolMeta.onQuickAdd?.()
+                      }}
+                      className='px-2 py-0.5 rounded bg-white/15 hover:bg-white/25 text-white text-[10.5px] font-semibold transition-colors cursor-pointer shrink-0'
+                    >
+                      {currentSceneToolMeta.quickAddLabel}
+                    </button>
+                  )}
+                </div>
+                <p className='text-[10.5px] text-zinc-200 leading-snug'>
+                  <strong>How to use:</strong> {currentSceneToolMeta.shortHint}
+                </p>
+              </div>
+
+              {/* Room / Stage Shell Controls (Shown when 'room' is selected) */}
+              {activeSceneTool === 'room' && (
               <div className='pt-1.5 border-t border-zinc-800/80 space-y-1.5'>
                 <span className='text-[11px] font-medium text-zinc-300 block'>
                   3D Room / Stage Walls
@@ -1364,8 +1704,10 @@ export default function SettingsPanel() {
                   </div>
                 )}
               </div>
+              )}
 
               {/* Extruded 3D Boxes / Volumes */}
+              {activeSceneTool === 'boxes' && (
               <div className='pt-1.5 border-t border-zinc-800/80 space-y-2'>
                 <div className='flex items-center justify-between'>
                   <span className='text-[11px] font-medium text-zinc-300'>
@@ -1543,8 +1885,10 @@ export default function SettingsPanel() {
                   </div>
                 )}
               </div>
+              )}
 
               {/* Opt-In #2: 3D Alpha-Masked Cutout Billboards (Standees for People, Trees, Curved Props) */}
+              {activeSceneTool === 'billboards' && (
               <div className='pt-1.5 border-t border-zinc-800/80 space-y-2'>
                 <div className='flex items-center justify-between'>
                   <span className='text-[11px] font-medium text-emerald-300'>
@@ -1734,24 +2078,12 @@ export default function SettingsPanel() {
                     </div>
                   )}
               </div>
+              )}
 
-              {/* Opt-In #4: Hallway & Architectural Wall Details (7 Optional Specialized Tools) */}
-              <div className='pt-2 border-t border-zinc-800/80 space-y-2.5'>
-                <div className='rounded-md bg-zinc-950/90 border border-zinc-800 p-2 space-y-1'>
-                  <div className='flex items-center justify-between'>
-                    <span className='text-[11px] font-semibold text-zinc-200'>
-                      Hallway & Architectural Geometry
-                    </span>
-                    <span className='text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700'>
-                      7 Optional Tools
-                    </span>
-                  </div>
-                  <p className='text-[10px] text-zinc-400 leading-relaxed'>
-                    All 7 tools below are <strong className='text-zinc-200'>strictly optional</strong>. Enable only the tool that matches the architectural feature in your photo:
-                  </p>
-                </div>
-
+              {/* Opt-In #4: Hallway & Architectural Wall Details (Focused Inspector per Selected Tool) */}
+              <div className='space-y-2.5'>
                 {/* OPTION 1 (OPTIONAL): 2-Click / Multi-Bend / Catenary 3D Swept Rail & Pipe Tool */}
+                {activeSceneTool === 'rails' && (
                 <div className='rounded-md border border-rose-500/30 bg-rose-950/15 p-2 space-y-1.5'>
                   <div className='flex items-center justify-between'>
                     <span className='text-[10.5px] font-semibold text-rose-300'>
@@ -2015,8 +2347,10 @@ export default function SettingsPanel() {
                       </div>
                     )}
                 </div>
+                )}
 
                 {/* OPTION 2 (OPTIONAL): Wall-Parallel Offset Cutout Layer */}
+                {activeSceneTool === 'wall-cutouts' && (
                 <div className='rounded-md border border-purple-500/30 bg-purple-950/15 p-2 space-y-1.5'>
                   <div className='flex items-center justify-between'>
                     <span className='text-[10.5px] font-semibold text-purple-300'>
@@ -2180,8 +2514,10 @@ export default function SettingsPanel() {
                       </div>
                     )}
                 </div>
+                )}
 
                 {/* OPTION 3 (OPTIONAL): Wall Relief & Recessed Alcove Extruder */}
+                {activeSceneTool === 'reliefs' && (
                 <div className='rounded-md border border-cyan-500/30 bg-cyan-950/15 p-2 space-y-1.5'>
                   <div className='flex items-center justify-between'>
                     <span className='text-[10.5px] font-semibold text-cyan-300'>
@@ -2464,8 +2800,10 @@ export default function SettingsPanel() {
                       </div>
                     )}
                 </div>
+                )}
 
                 {/* OPTION 4 (OPTIONAL): "3-Sweep" Cylinder & Pillar Snapper */}
+                {activeSceneTool === 'columns' && (
                 <div className='rounded-md border border-yellow-500/30 bg-yellow-950/15 p-2 space-y-1.5'>
                   <div className='flex items-center justify-between'>
                     <span className='text-[10.5px] font-semibold text-yellow-300'>
@@ -2575,8 +2913,10 @@ export default function SettingsPanel() {
                       </div>
                     )}
                 </div>
+                )}
 
                 {/* OPTION 5 (OPTIONAL): Parametric 3D Staircase & Sloped Ramp Generator */}
+                {activeSceneTool === 'stairs' && (
                 <div className='rounded-md border border-emerald-500/30 bg-emerald-950/15 p-2 space-y-1.5'>
                   <div className='flex items-center justify-between'>
                     <span className='text-[10.5px] font-semibold text-emerald-300'>
@@ -2878,8 +3218,10 @@ export default function SettingsPanel() {
                       </div>
                     )}
                 </div>
+                )}
 
                 {/* OPTION 6 (OPTIONAL): Arbitrary N-Point 3D Floor Polygon Prism Extruder */}
+                {activeSceneTool === 'prisms' && (
                 <div className='rounded-md border border-orange-500/30 bg-orange-950/15 p-2 space-y-1.5'>
                   <div className='flex items-center justify-between'>
                     <span className='text-[10.5px] font-semibold text-orange-300'>
@@ -3046,8 +3388,10 @@ export default function SettingsPanel() {
                       </div>
                     )}
                 </div>
+                )}
 
                 {/* OPTION 7 (OPTIONAL): Axis-Symmetric 3D Revolved "Lathe" Object */}
+                {activeSceneTool === 'lathe' && (
                 <div className='rounded-md border border-pink-500/30 bg-pink-950/15 p-2 space-y-1.5'>
                   <div className='flex items-center justify-between'>
                     <span className='text-[10.5px] font-semibold text-pink-300'>
@@ -3241,8 +3585,10 @@ export default function SettingsPanel() {
                       </div>
                     )}
                 </div>
+                )}
 
                 {/* OPTION 8 (OPTIONAL): Parametric 3D Coffered Ceiling & Wall Panel Array Generator */}
+                {activeSceneTool === 'coffers' && (
                 <div className='rounded-md border border-indigo-400/35 bg-indigo-950/20 p-2 space-y-1.5'>
                   <div className='flex items-center justify-between'>
                     <span className='text-[10.5px] font-semibold text-indigo-300'>
@@ -3472,8 +3818,10 @@ export default function SettingsPanel() {
                       </div>
                     )}
                 </div>
+                )}
 
                 {/* OPTION 9 (OPTIONAL): 3-Point Curved Arc Wall & Bow-Window Bay Extruder */}
+                {activeSceneTool === 'curved-walls' && (
                 <div className='rounded-md border border-teal-500/35 bg-teal-950/15 p-2 space-y-1.5'>
                   <div className='flex items-center justify-between'>
                     <span className='text-[10.5px] font-semibold text-teal-300'>
@@ -3618,8 +3966,10 @@ export default function SettingsPanel() {
                       </div>
                     )}
                 </div>
+                )}
 
                 {/* ZERO-API "AI SCENE ARCHITECT BRIDGE" (OPTIONAL — Copy Prompt -> Paste JSON) */}
+                {activeSceneTool === 'ai-bridge' && (
                 <div className='rounded-md border border-indigo-500/35 bg-indigo-950/20 p-2 space-y-2'>
                   <div className='flex items-center justify-between'>
                     <div className='flex items-center gap-1.5'>
@@ -3734,6 +4084,7 @@ export default function SettingsPanel() {
                     </div>
                   )}
                 </div>
+                )}
               </div>
 
               {/* One-Click Binary .GLB 3D Scene Export */}
@@ -3742,7 +4093,7 @@ export default function SettingsPanel() {
                 onClick={() => {
                   void handleExportReconstructedGLB()
                 }}
-                className='w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold text-xs transition-colors cursor-pointer'
+                className='w-full flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs transition-colors cursor-pointer'
               >
                 <Download className='w-3.5 h-3.5' />
                 <span>Download Textured 3D Scene (.glb)</span>
@@ -3750,8 +4101,10 @@ export default function SettingsPanel() {
             </div>
           )}
         </div>
+        )}
 
-        {/* NEW: Perspective Texture Unwarper (Flat Wallpaper / Facade Extractor) */}
+        {/* TAB 3: Perspective Texture Unwarper & Multi-Scale PBR Material Builder */}
+        {activeSidebarTab === 'pbr' && (
         <div className='rounded-lg border border-rose-500/30 bg-rose-950/15 p-2.5 space-y-2'>
           <div className='flex items-center gap-1.5 text-[11px] font-semibold text-rose-300'>
             <Crop className='w-3.5 h-3.5 text-rose-400' />
@@ -4128,8 +4481,11 @@ export default function SettingsPanel() {
             </div>
           )}
         </div>
+        )}
 
-        {/* NEW: Cinematic 2.5D Parallax Camera Animator (Still Photo -> Moving 3D Shot) */}
+        {/* TAB 4: Cinematic 2.5D Parallax Camera Animator & 3D Test Proxy */}
+        {activeSidebarTab === 'animate' && (
+        <>
         <div className='rounded-lg border border-violet-500/35 bg-violet-950/15 p-2.5 space-y-2'>
           <div className='flex items-center justify-between'>
             <div className='flex items-center gap-1.5 text-[11px] font-semibold text-violet-300'>
@@ -4303,7 +4659,12 @@ export default function SettingsPanel() {
             </div>
           )}
         </div>
+        </>
+        )}
 
+        {/* Calibration Precision Extras (Shown in Step 1: Calibrate) */}
+        {activeSidebarTab === 'calibrate' && (
+        <>
         {/* 1. Multi-Line Least-Squares Vanishing Point Solver */}
         <div className='rounded-lg border border-zinc-800/90 bg-zinc-900/50 p-2.5 space-y-2'>
           <Checkbox
@@ -4546,8 +4907,11 @@ export default function SettingsPanel() {
             </div>
           )}
         </div>
+        </>
+        )}
 
-        {/* 5. Interactive 3D Proxy Objects, Custom .GLB/.OBJ & Sun Shadow Matcher */}
+        {/* 5. Interactive 3D Proxy Objects, Custom .GLB/.OBJ & Sun Shadow Matcher (Shown in Tab 4: Motion/3D) */}
+        {activeSidebarTab === 'animate' && (
         <div className='rounded-lg border border-zinc-800/90 bg-zinc-900/50 p-2.5 space-y-2.5'>
           <div className='flex items-center gap-1.5 text-[11px] font-medium text-zinc-300'>
             <Box className='w-3.5 h-3.5 text-amber-400' />
@@ -4775,8 +5139,10 @@ export default function SettingsPanel() {
             </div>
           )}
         </div>
+        )}
 
-        {/* 6. Calibration Snapshot Slots (A/B/C/D) & Local Browser Auto-Save */}
+        {/* 6. Calibration Snapshot Slots (A/B/C/D) & Local Browser Auto-Save (Shown in Step 1: Calibrate) */}
+        {activeSidebarTab === 'calibrate' && (
         <div className='rounded-lg border border-zinc-800/90 bg-zinc-900/50 p-2.5 space-y-2.5'>
           <div className='flex items-center gap-1.5 text-[11px] font-medium text-zinc-300'>
             <Bookmark className='w-3.5 h-3.5 text-sky-400' />
@@ -4884,6 +5250,8 @@ export default function SettingsPanel() {
             )}
           </div>
         </div>
+        )}
+      </div>
       </div>
     </aside>
   )

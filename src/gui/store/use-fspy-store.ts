@@ -109,6 +109,23 @@ export interface ViewportTransform {
 
 export type ActiveModalType = 'about' | 'shortcuts' | 'export-hub' | 'guide' | null
 
+export type SidebarTabId = 'calibrate' | 'scene' | 'pbr' | 'animate'
+
+export type SceneToolId =
+  | 'room'
+  | 'boxes'
+  | 'billboards'
+  | 'rails'
+  | 'wall-cutouts'
+  | 'reliefs'
+  | 'columns'
+  | 'stairs'
+  | 'prisms'
+  | 'lathe'
+  | 'coffers'
+  | 'curved-walls'
+  | 'ai-bridge'
+
 export type ThreeProxyPreset =
   | 'calibration-rig'
   | 'human-1.8m'
@@ -170,6 +187,8 @@ export interface FSpyStoreState {
   exifData: ExtractedExifData | null
   toastMessage: string | null
   activeModal: ActiveModalType
+  activeSidebarTab: SidebarTabId
+  activeSceneTool: SceneToolId
 
   // Opt-In #1: Multi-Line Least-Squares VP Solver & Residual Diagnostics
   multiLineSolverEnabled: boolean
@@ -401,6 +420,9 @@ export interface FSpyStoreState {
   resetViewport: () => void
   showToast: (message: string | null) => void
   setActiveModal: (modal: ActiveModalType) => void
+  setActiveSidebarTab: (tab: SidebarTabId) => void
+  setActiveSceneTool: (tool: SceneToolId) => void
+  activateSceneToolAndEnable: (tool: SceneToolId) => void
   markProjectSaved: (projectName?: string) => void
 }
 
@@ -568,6 +590,8 @@ export const useFSpyStore = create<FSpyStoreState>()(
       exifData: null,
       toastMessage: null,
       activeModal: null,
+      activeSidebarTab: 'calibrate',
+      activeSceneTool: 'boxes',
 
       // All fork enhancements default to false (strictly opt-in)
       multiLineSolverEnabled: false,
@@ -2451,6 +2475,45 @@ export const useFSpyStore = create<FSpyStoreState>()(
           return
         }
         set({ parallaxAnimator: next })
+      },
+
+      setActiveSidebarTab: (activeSidebarTab) => {
+        set({
+          activeSidebarTab,
+          uiState: { ...get().uiState, sidePanelsAreVisible: true }
+        })
+      },
+
+      setActiveSceneTool: (activeSceneTool) => {
+        set({ activeSceneTool })
+      },
+
+      activateSceneToolAndEnable: (tool) => {
+        const state = get()
+        const sb = {
+          ...state.sceneBlockout,
+          enabled: true,
+          freeOrbitMode: false,
+          showViewportHandles: true
+        }
+        if (tool === 'billboards') sb.billboardsEnabled = true
+        if (tool === 'rails') sb.sweptRailsEnabled = true
+        if (tool === 'wall-cutouts') sb.wallCutoutsEnabled = true
+        if (tool === 'reliefs') sb.wallReliefsEnabled = true
+        if (tool === 'columns') sb.sweptColumnsEnabled = true
+        if (tool === 'stairs') sb.staircasesEnabled = true
+        if (tool === 'prisms') sb.floorPrismsEnabled = true
+        if (tool === 'lathe') sb.latheObjectsEnabled = true
+        if (tool === 'coffers') sb.cofferedArraysEnabled = true
+        if (tool === 'curved-walls') sb.curvedWallsEnabled = true
+
+        set({
+          activeSidebarTab: 'scene',
+          activeSceneTool: tool,
+          sceneBlockout: sb,
+          activeModal: null,
+          uiState: { ...state.uiState, sidePanelsAreVisible: true }
+        })
       }
     }),
     {

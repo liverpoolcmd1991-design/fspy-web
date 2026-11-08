@@ -87,6 +87,13 @@ export default function ControlPointsPanel() {
   const [dockCollapsed, setDockCollapsed] = useState(false)
   const [snappedIndicatorPos, setSnappedIndicatorPos] =
     useState<Point2D | null>(null)
+  const [snappedSegmentAbs, setSnappedSegmentAbs] = useState<{
+    p1: Point2D
+    p2: Point2D
+  } | null>(null)
+  const [snappedKind, setSnappedKind] = useState<
+    'corner' | 'segment' | 'ridge' | null
+  >(null)
   const [footprintDrag, setFootprintDrag] = useState<{
     startAbs: Point2D
     currentAbs: Point2D
@@ -201,11 +208,9 @@ export default function ControlPointsPanel() {
       ? undistortedImageUrl
       : imageState.url
 
-  // Lazily compute Sobel edge map only when an opt-in edge feature is enabled or Alt is pressed
+  // Pre-warm Sobel/NMS edge map whenever an image is loaded so snapping is instant
   useEffect(() => {
-    const needsEdgeMap =
-      edgeSnappingEnabled || showDetectedEdgesOverlay || altIsDown
-    if (!imageState.url || !needsEdgeMap || edgeMap) return
+    if (!imageState.url || edgeMap) return
 
     let cancelled = false
     void buildEdgeGradientMap(imageState.url).then((computed) => {
@@ -216,14 +221,7 @@ export default function ControlPointsPanel() {
     return () => {
       cancelled = true
     }
-  }, [
-    imageState.url,
-    edgeSnappingEnabled,
-    showDetectedEdgesOverlay,
-    altIsDown,
-    edgeMap,
-    setEdgeMap
-  ])
+  }, [imageState.url, edgeMap, setEdgeMap])
 
   // Render undistorted backdrop image when Opt-In Lens Distortion is enabled
   useEffect(() => {
@@ -329,6 +327,8 @@ export default function ControlPointsPanel() {
     const handlePointerUp = () => {
       setIsDraggingControlPoint(false)
       setSnappedIndicatorPos(null)
+      setSnappedSegmentAbs(null)
+      setSnappedKind(null)
       setIsPanning(false)
       panStartRef.current = null
     }
@@ -462,16 +462,34 @@ export default function ControlPointsPanel() {
     return relativePosition
   }
 
-  const abs2RelWithOptionalSnap = (absPos: Point2D): Point2D => {
+  const abs2RelWithOptionalSnap = (
+    absPos: Point2D,
+    anchorRelPoint?: Point2D
+  ): Point2D => {
     const rawRel = abs2RelPoint(absPos, true)
     if ((edgeSnappingEnabled || altIsDown) && edgeMap) {
-      const snapRes = snapRelativePointToEdge(rawRel, edgeMap)
+      const snapRes = snapRelativePointToEdge(rawRel, edgeMap, {
+        searchRadiusPx: 20,
+        minStrengthThreshold: 0.065,
+        anchorRelPoint
+      })
       if (snapRes.snapped) {
         setSnappedIndicatorPos(rel2AbsPoint(snapRes.point))
+        setSnappedKind(snapRes.snapKind ?? 'ridge')
+        if (snapRes.snappedSegment) {
+          setSnappedSegmentAbs({
+            p1: rel2AbsPoint(snapRes.snappedSegment.p1),
+            p2: rel2AbsPoint(snapRes.snappedSegment.p2)
+          })
+        } else {
+          setSnappedSegmentAbs(null)
+        }
         return snapRes.point
       }
     }
     setSnappedIndicatorPos(null)
+    setSnappedSegmentAbs(null)
+    setSnappedKind(null)
     return rawRel
   }
 
@@ -1143,7 +1161,7 @@ export default function ControlPointsPanel() {
                       onControlPointDrag={(dragPos: Point2D) => {
                         didDragControlPoint(dragPos)
                         updateSweptWallRail(rail.id, {
-                          p1Rel: abs2RelWithOptionalSnap(dragPos)
+                          p1Rel: abs2RelWithOptionalSnap(dragPos, rail.p2Rel)
                         })
                       }}
                     />
@@ -1195,7 +1213,7 @@ export default function ControlPointsPanel() {
                       onControlPointDrag={(dragPos: Point2D) => {
                         didDragControlPoint(dragPos)
                         updateSweptWallRail(rail.id, {
-                          p2Rel: abs2RelWithOptionalSnap(dragPos)
+                          p2Rel: abs2RelWithOptionalSnap(dragPos, rail.p1Rel)
                         })
                       }}
                     />
@@ -1628,7 +1646,7 @@ export default function ControlPointsPanel() {
                       onControlPointDrag={(dragPos: Point2D) => {
                         didDragControlPoint(dragPos)
                         const hit = unprojectRelativePointToPlaneZ(
-                          abs2RelPoint(dragPos),
+                          abs2RelWithOptionalSnap(dragPos),
                           st.offsetZ,
                           camParams
                         )
@@ -1660,7 +1678,7 @@ export default function ControlPointsPanel() {
                       onControlPointDrag={(dragPos: Point2D) => {
                         didDragControlPoint(dragPos)
                         const hit = unprojectRelativePointToPlaneZ(
-                          abs2RelPoint(dragPos),
+                          abs2RelWithOptionalSnap(dragPos),
                           st.offsetZ,
                           camParams
                         )
@@ -1696,7 +1714,7 @@ export default function ControlPointsPanel() {
                       onControlPointDrag={(dragPos: Point2D) => {
                         didDragControlPoint(dragPos)
                         const hit = unprojectRelativePointToPlaneZ(
-                          abs2RelPoint(dragPos),
+                          abs2RelWithOptionalSnap(dragPos),
                           st.offsetZ,
                           camParams
                         )
@@ -1732,7 +1750,7 @@ export default function ControlPointsPanel() {
                       onControlPointDrag={(dragPos: Point2D) => {
                         didDragControlPoint(dragPos)
                         const solvedH = solveExtrudedHeightZFromRelativePoint(
-                          abs2RelPoint(dragPos),
+                          abs2RelWithOptionalSnap(dragPos),
                           { x: backFloorCenter3D.x, y: backFloorCenter3D.y },
                           st.offsetZ,
                           camParams
@@ -1873,7 +1891,7 @@ export default function ControlPointsPanel() {
                         onControlPointDrag={(dragPos: Point2D) => {
                           didDragControlPoint(dragPos)
                           const solvedH = solveExtrudedHeightZFromRelativePoint(
-                            abs2RelPoint(dragPos),
+                            abs2RelWithOptionalSnap(dragPos),
                             centroidXY,
                             prism.baseZ,
                             camParams
@@ -2315,7 +2333,7 @@ export default function ControlPointsPanel() {
                               didDragControlPoint(dragPos)
                               const solvedH =
                                 solveExtrudedHeightZFromRelativePoint(
-                                  abs2RelPoint(dragPos),
+                                  abs2RelWithOptionalSnap(dragPos),
                                   apex3D,
                                   cw.baseZ,
                                   camParams
@@ -2480,7 +2498,10 @@ export default function ControlPointsPanel() {
           fill='rgba(16, 185, 129, 0.25)'
           onControlPointDrag={(pos: Point2D) => {
             didDragControlPoint(pos)
-            setWorldRulerPoint(0, abs2RelWithOptionalSnap(pos))
+            setWorldRulerPoint(
+              0,
+              abs2RelWithOptionalSnap(pos, worldRulerPoints[1])
+            )
           }}
         />
         {/* Endpoint B */}
@@ -2490,7 +2511,10 @@ export default function ControlPointsPanel() {
           fill='rgba(16, 185, 129, 0.25)'
           onControlPointDrag={(pos: Point2D) => {
             didDragControlPoint(pos)
-            setWorldRulerPoint(1, abs2RelWithOptionalSnap(pos))
+            setWorldRulerPoint(
+              1,
+              abs2RelWithOptionalSnap(pos, worldRulerPoints[0])
+            )
           }}
         />
 
@@ -2664,9 +2688,14 @@ export default function ControlPointsPanel() {
             position: Point2D
           ) => {
             didDragControlPoint(position)
+            const oppositeIdx =
+              controlPointIndex === ControlPointPairIndex.First
+                ? ControlPointPairIndex.Second
+                : ControlPointPairIndex.First
+            const anchorRel = controlPointsState1VP.horizon[oppositeIdx]
             setHorizonControlPointPosition(
               controlPointIndex,
-              abs2RelWithOptionalSnap(position)
+              abs2RelWithOptionalSnap(position, anchorRel)
             )
           }}
         />
@@ -2682,7 +2711,7 @@ export default function ControlPointsPanel() {
           }
           dragCallback={(absolutePosition: Point2D) => {
             didDragControlPoint(absolutePosition)
-            setPrincipalPointPosition(abs2RelPoint(absolutePosition))
+            setPrincipalPointPosition(abs2RelWithOptionalSnap(absolutePosition))
           }}
         />
       </g>
@@ -2751,10 +2780,18 @@ export default function ControlPointsPanel() {
           ) => {
             if (!calibrationSettings2VP.quadModeEnabled) {
               didDragControlPoint(position)
+              const oppositeIdx =
+                pointPairIndex === ControlPointPairIndex.First
+                  ? ControlPointPairIndex.Second
+                  : ControlPointPairIndex.First
+              const anchorRel =
+                controlPointsState2VP.secondVanishingPoint.lineSegments[
+                  lineSegmentIndex
+                ]?.[oppositeIdx]
               setSecondVPControlPoint(
                 lineSegmentIndex,
                 pointPairIndex,
-                abs2RelWithOptionalSnap(position)
+                abs2RelWithOptionalSnap(position, anchorRel)
               )
             }
           }}
@@ -2776,10 +2813,18 @@ export default function ControlPointsPanel() {
               position: Point2D
             ) => {
               didDragControlPoint(position)
+              const oppositeIdx =
+                pointPairIndex === ControlPointPairIndex.First
+                  ? ControlPointPairIndex.Second
+                  : ControlPointPairIndex.First
+              const anchorRel =
+                controlPointsState2VP.thirdVanishingPoint.lineSegments[
+                  lineSegmentIndex
+                ]?.[oppositeIdx]
               setThirdVPControlPoint(
                 lineSegmentIndex,
                 pointPairIndex,
-                abs2RelWithOptionalSnap(position)
+                abs2RelWithOptionalSnap(position, anchorRel)
               )
             }}
           />
@@ -2797,7 +2842,9 @@ export default function ControlPointsPanel() {
             }
             dragCallback={(absolutePosition: Point2D) => {
               didDragControlPoint(absolutePosition)
-              setPrincipalPointPosition(abs2RelPoint(absolutePosition))
+              setPrincipalPointPosition(
+                abs2RelWithOptionalSnap(absolutePosition)
+              )
             }}
           />
         )}
@@ -2937,10 +2984,18 @@ export default function ControlPointsPanel() {
                     position: Point2D
                   ) => {
                     didDragControlPoint(position)
+                    const oppositeIdx =
+                      pointPairIndex === ControlPointPairIndex.First
+                        ? ControlPointPairIndex.Second
+                        : ControlPointPairIndex.First
+                    const anchorRel =
+                      controlPointsStateBase.firstVanishingPoint.lineSegments[
+                        lineSegmentIndex
+                      ]?.[oppositeIdx]
                     setFirstVPControlPoint(
                       lineSegmentIndex,
                       pointPairIndex,
-                      abs2RelWithOptionalSnap(position)
+                      abs2RelWithOptionalSnap(position, anchorRel)
                     )
                   }}
                 />
@@ -2984,23 +3039,64 @@ export default function ControlPointsPanel() {
                 />
               )}
 
-              {/* Visual Sub-Pixel Magnetic Snap Ring Indicator */}
+              {/* Visual Sub-Pixel Magnetic Snap Ring & Snapped Line Segment Indicator */}
               {snappedIndicatorPos && (
                 <g className='pointer-events-none'>
+                  {snappedSegmentAbs && (
+                    <line
+                      x1={snappedSegmentAbs.p1.x}
+                      y1={snappedSegmentAbs.p1.y}
+                      x2={snappedSegmentAbs.p2.x}
+                      y2={snappedSegmentAbs.p2.y}
+                      stroke='#22d3ee'
+                      strokeWidth={2.5}
+                      strokeOpacity={0.85}
+                      strokeDasharray='5 3'
+                    />
+                  )}
                   <circle
                     cx={snappedIndicatorPos.x}
                     cy={snappedIndicatorPos.y}
-                    r={11}
-                    fill='none'
-                    stroke='#22d3ee'
-                    strokeWidth={1.75}
+                    r={12}
+                    fill='rgba(34, 211, 238, 0.14)'
+                    stroke={snappedKind === 'corner' ? '#fbbf24' : '#22d3ee'}
+                    strokeWidth={2}
                   />
                   <circle
                     cx={snappedIndicatorPos.x}
                     cy={snappedIndicatorPos.y}
-                    r={2.5}
-                    fill='#22d3ee'
+                    r={3}
+                    fill={snappedKind === 'corner' ? '#fbbf24' : '#22d3ee'}
                   />
+                  <g
+                    transform={`translate(${snappedIndicatorPos.x}, ${snappedIndicatorPos.y - 20})`}
+                  >
+                    <rect
+                      x={-38}
+                      y={-9}
+                      width={76}
+                      height={16}
+                      rx={4}
+                      fill='rgba(8, 18, 28, 0.92)'
+                      stroke={snappedKind === 'corner' ? '#fbbf24' : '#22d3ee'}
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={0}
+                      y={2}
+                      textAnchor='middle'
+                      fill={snappedKind === 'corner' ? '#fde68a' : '#a5f3fc'}
+                      fontSize={8.5}
+                      fontFamily='JetBrains Mono, monospace'
+                      fontWeight={700}
+                    >
+                      {snappedKind === 'corner'
+                        ? 'CORNER SNAP'
+                        : snappedKind === 'segment'
+                          ? 'LINE SNAP'
+                          : 'EDGE SNAP'}
+                    </text>
+                  </g>
                 </g>
               )}
             </svg>
