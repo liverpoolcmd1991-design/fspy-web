@@ -1,23 +1,9 @@
 /**
  * fSpy
  * Copyright (c) 2020 - Per Gantelius
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import React from 'react'
-import { Palette } from '../../style/palette'
+import { AlertTriangle, AlertOctagon } from 'lucide-react'
 
 export enum BulletListType {
   Warnings,
@@ -29,52 +15,28 @@ interface BulletListProps {
   type: BulletListType
 }
 
-export default class BulletList extends React.PureComponent<BulletListProps> {
-  render() {
-    return (
-      <ul style={{ margin: 0, padding: 0 }}>
-        {this.props.messages.map((message: string, i: number) => this.renderBullet(i, message))}
-      </ul>
-    )
-  }
+export default function BulletList(props: BulletListProps) {
+  const isError = props.type === BulletListType.Errors
 
-  private renderBullet(index: number, message: string) {
-    return (
-      <li key={index} style={{ color: Palette.disabledTextColor, display: 'flex' }}>
-        {this.renderIcon()} {message}
-      </li>
-    )
-  }
-
-  private renderIcon() {
-    let isError = this.props.type == BulletListType.Errors
-    let points: number[] = []
-    if (isError) {
-      let r = 0.5
-      for (let i = 0; i < 6; i++) {
-        let angle = 2 * Math.PI * i / 6
-        let x = 0.5 + r * Math.cos(angle)
-        let y = 0.5 + r * Math.sin(angle)
-        points.push(x)
-        points.push(y)
-      }
-    } else {
-      points = [
-        0.0, 0.9,
-        0.5, -0.1,
-        1.0, 0.9
-      ]
-    }
-    let color = isError ? Palette.red : Palette.orange
-    let size = 12
-    return (
-      <div style={{ paddingRight: '4px', paddingTop: '2px' }}>
-        <svg width={size} height={size}>
-          <polygon points={points.map((value: number) => size * value).join(', ')} fill={color} />
-          <polyline points='6, 3, 6, 7' stroke={Palette.white} />
-          <polyline points='6, 8, 6, 9' stroke={Palette.white} />
-        </svg>
-      </div>
-    )
-  }
+  return (
+    <ul className='space-y-1.5 m-0 p-0 list-none'>
+      {props.messages.map((message: string, i: number) => (
+        <li
+          key={i}
+          className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-[11px] leading-snug ${
+            isError
+              ? 'bg-red-950/35 border-red-800/50 text-red-200'
+              : 'bg-amber-950/30 border-amber-800/40 text-amber-200'
+          }`}
+        >
+          {isError ? (
+            <AlertOctagon className='w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5' />
+          ) : (
+            <AlertTriangle className='w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5' />
+          )}
+          <span>{message}</span>
+        </li>
+      ))}
+    </ul>
+  )
 }

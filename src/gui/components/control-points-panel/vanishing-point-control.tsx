@@ -1,28 +1,16 @@
 /**
  * fSpy
  * Copyright (c) 2020 - Per Gantelius
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
-import ControlPolyline from './control-polyline'
-import ControlPoint from './control-point'
-import { Group } from 'react-konva'
-import { VanishingPointControlState } from '../../types/control-points-state'
-import Point2D from '../../solver/point-2d'
 import MathUtil from '../../solver/math-util'
+import Point2D from '../../solver/point-2d'
+import {
+  ControlPointPairIndex,
+  VanishingPointControlState
+} from '../../types/control-points-state'
+import ControlPoint from './control-point'
+import ControlPolyline from './control-polyline'
 
 interface VanishingPointControlProps {
   hideControlPoints?: boolean
@@ -30,71 +18,130 @@ interface VanishingPointControlProps {
   controlState: VanishingPointControlState
   vanishingPoint: Point2D | null
   vanishingPointIndex: number
+  showResiduals?: boolean
+  segmentResidualAnglesDeg?: number[]
 
   onControlPointDrag(
     lineSegmentIndex: number,
-    pointPairIndex: number,
+    pointPairIndex: ControlPointPairIndex,
     position: Point2D
   ): void
 }
 
-export default class VanishingPointControl extends React.PureComponent<VanishingPointControlProps> {
-  render() {
-    return (
-      <Group>
-        {this.renderVanishingPoint()}
-        {this.renderLineSegment(0)}
-        {this.renderLineSegment(1)}
-      </Group>
-    )
-  }
+export default function VanishingPointControl(
+  props: VanishingPointControlProps
+) {
+  const renderLineSegment = (index: number) => {
+    const seg = props.controlState.lineSegments[index]
+    if (!seg) return null
 
-  private renderLineSegment(index: number) {
+    const mid = MathUtil.lineSegmentMidpoint(seg)
+    const residualDeg = props.segmentResidualAnglesDeg?.[index]
+    const showBadge =
+      Boolean(props.showResiduals) &&
+      typeof residualDeg === 'number' &&
+      !Number.isNaN(residualDeg)
+
+    let badgeColor = '#10b981' // emerald
+    if (typeof residualDeg === 'number') {
+      if (residualDeg > 0.85) badgeColor = '#ef4444' // red
+      else if (residualDeg > 0.25) badgeColor = '#f59e0b' // amber
+    }
+
     return (
-      <Group>
+      <g key={index}>
         <ControlPolyline
-          number={this.props.vanishingPointIndex + 1}
-          points={this.props.controlState.lineSegments[index]}
-          color={this.props.color}
+          number={props.vanishingPointIndex + 1}
+          points={seg}
+          color={props.color}
+        />
+        {showBadge && (
+          <g
+            transform={`translate(${mid.x}, ${mid.y - 14})`}
+            className='pointer-events-none select-none'
+          >
+            <rect
+              x={-22}
+              y={-9}
+              width={44}
+              height={16}
+              rx={4}
+              fill='#09090b'
+              fillOpacity={0.88}
+              stroke={badgeColor}
+              strokeWidth={1}
+            />
+            <text
+              x={0}
+              y={2}
+              textAnchor='middle'
+              fill={badgeColor}
+              fontSize={9.5}
+              fontFamily='"JetBrains Mono", monospace'
+              fontWeight={600}
+            >
+              {residualDeg.toFixed(2)}°
+            </text>
+          </g>
+        )}
+        <ControlPoint
+          hidden={props.hideControlPoints}
+          absolutePosition={seg[0]}
+          onControlPointDrag={(position: Point2D) => {
+            props.onControlPointDrag(index, ControlPointPairIndex.First, position)
+          }}
+          fill={props.color}
         />
         <ControlPoint
-          hidden={this.props.hideControlPoints}
-          absolutePosition={this.props.controlState.lineSegments[index][0]}
+          hidden={props.hideControlPoints}
+          absolutePosition={seg[1]}
           onControlPointDrag={(position: Point2D) => {
-            this.props.onControlPointDrag(index, 0, position)
+            props.onControlPointDrag(index, ControlPointPairIndex.Second, position)
           }}
-          fill={this.props.color}
+          fill={props.color}
         />
-        <ControlPoint
-          hidden={this.props.hideControlPoints}
-          absolutePosition={this.props.controlState.lineSegments[index][1]}
-          onControlPointDrag={(position: Point2D) => {
-            this.props.onControlPointDrag(index, 1, position)
-          }}
-          fill={this.props.color}
-        />
-      </Group>
+      </g>
     )
   }
 
-  private renderVanishingPoint() {
-    if (!this.props.vanishingPoint) {
+  const renderVanishingPoint = () => {
+    if (!props.vanishingPoint) {
       return null
     }
 
-    let p1 = MathUtil.lineSegmentMidpoint(
-      this.props.controlState.lineSegments[0]
-    )
-    let p2 = this.props.vanishingPoint
-    let p3 = MathUtil.lineSegmentMidpoint(
-      this.props.controlState.lineSegments[1]
-    )
+    const vp = props.vanishingPoint
     return (
-      <ControlPolyline
-        color={this.props.color}
-        dimmed={true}
-        points={[p1, p2, p3]}
-      />
+      <g className='pointer-events-none'>
+        {props.controlState.lineSegments.map((seg, idx) => {
+          const mid = MathUtil.lineSegmentMidpoint(seg)
+          return (
+            <ControlPolyline
+              key={`ray-${idx}`}
+              color={props.color}
+              dimmed={true}
+              points={[mid, vp]}
+            />
+          )
+        })}
+        <circle
+          cx={vp.x}
+          cy={vp.y}
+          r={4}
+          fill={props.color}
+          stroke='#09090b'
+          strokeWidth={1.25}
+          opacity={0.95}
+        />
+      </g>
     )
   }
+
+  return (
+    <g>
+      {renderVanishingPoint()}
+      {props.controlState.lineSegments.map((_, index) =>
+        renderLineSegment(index)
+      )}
+    </g>
+  )
 }

@@ -16,7 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
 import { cameraPresets } from '../../solver/camera-presets'
 import { CameraData } from '../../types/calibration-settings'
 import strings from '../../strings/strings'

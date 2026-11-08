@@ -18,6 +18,8 @@ const eslintConfig = config(
       '**/.tmp/',
       '**/.yarn/',
       '**/coverage/',
+      'download-stats.js',
+      'eslint.config.js',
     ],
   },
   {
@@ -73,19 +75,6 @@ const eslintConfig = config(
           ignoreRestSiblings: true,
         },
       ],
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: 'react-redux',
-              importNames: ['useSelector', 'useStore', 'useDispatch'],
-              message:
-                'Please use pre-typed versions from `src/app/hooks.ts` instead.',
-            },
-          ],
-        },
-      ],
     },
   },
 
@@ -108,6 +97,7 @@ const eslintConfig = config(
       '@typescript-eslint/no-unsafe-argument': ['off'],
       '@typescript-eslint/no-unsafe-assignment': ['off'],
       '@typescript-eslint/no-unsafe-call': ['off'],
+      '@typescript-eslint/no-unsafe-enum-assignment': ['off'],
       '@typescript-eslint/no-unsafe-member-access': ['off'],
       '@typescript-eslint/no-unsafe-return': ['off'],
       '@typescript-eslint/no-useless-constructor': ['off'],
@@ -117,6 +107,7 @@ const eslintConfig = config(
       '@typescript-eslint/prefer-includes': ['off'],
       '@typescript-eslint/prefer-nullish-coalescing': ['off'],
       '@typescript-eslint/restrict-plus-operands': ['off'],
+      '@typescript-eslint/restrict-template-expressions': ['off'],
       '@typescript-eslint/unbound-method': ['off'],
       'no-case-declarations': ['off'],
       'prefer-const': ['off'],

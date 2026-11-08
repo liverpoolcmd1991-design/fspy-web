@@ -149,6 +149,69 @@ export const cameraPresets: { [id: string]: CameraPreset } = {
     sensorWidth: 23.4,
     sensorHeight: 15.6
   },
+  'sony_a7_iv': {
+    displayName: 'Sony Alpha A7 IV / A7R V (Full Frame)',
+    sensorWidth: 35.9,
+    sensorHeight: 24.0
+  },
+  'sony_fx3': {
+    displayName: 'Sony FX3 / A7S III (Full Frame Cinema)',
+    sensorWidth: 35.6,
+    sensorHeight: 23.8
+  },
+  'canon_eos_r5': {
+    displayName: 'Canon EOS R5 / R6 Mark II',
+    sensorWidth: 36.0,
+    sensorHeight: 24.0
+  },
+  'nikon_z8': {
+    displayName: 'Nikon Z8 / Z9 (Full Frame)',
+    sensorWidth: 35.9,
+    sensorHeight: 23.9
+  },
+  'fujifilm_gfx_100': {
+    displayName: 'Fujifilm GFX 100 II (Medium Format)',
+    sensorWidth: 43.8,
+    sensorHeight: 32.9
+  },
+  'arri_alexa_mini_lf': {
+    displayName: 'ARRI Alexa Mini LF (Open Gate)',
+    sensorWidth: 36.7,
+    sensorHeight: 25.54
+  },
+  'arri_alexa_35': {
+    displayName: 'ARRI Alexa 35 (Super 35 4.6K)',
+    sensorWidth: 27.99,
+    sensorHeight: 19.22
+  },
+  'red_v_raptor_vv': {
+    displayName: 'RED V-Raptor 8K VV (VistaVision)',
+    sensorWidth: 40.96,
+    sensorHeight: 21.60
+  },
+  'blackmagic_ursa_12k': {
+    displayName: 'Blackmagic URSA Mini Pro 12K',
+    sensorWidth: 27.03,
+    sensorHeight: 14.25
+  },
+  'dji_mavic_3_pro': {
+    displayName: 'DJI Mavic 3 Pro (Hasselblad 4/3)',
+    sensorWidth: 17.3,
+    sensorHeight: 13.0,
+    focalLength: 12.29
+  },
+  'iphone_16_pro_main': {
+    displayName: 'iPhone 15 / 16 Pro (Main 24mm eq.)',
+    sensorWidth: 9.8,
+    sensorHeight: 7.3,
+    focalLength: 6.765
+  },
+  'iphone_16_pro_uw': {
+    displayName: 'iPhone 15 / 16 Pro (Ultra Wide 13mm eq.)',
+    sensorWidth: 5.6,
+    sensorHeight: 4.2,
+    focalLength: 2.22
+  },
   'iphone_6s': {
     displayName: 'iPhone 6S',
     sensorWidth: 4.8,
@@ -156,3 +219,4 @@ export const cameraPresets: { [id: string]: CameraPreset } = {
     focalLength: 4.15
   }
 }
+

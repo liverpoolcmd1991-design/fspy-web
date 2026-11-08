@@ -16,7 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
 import { Overlay3DGuide } from '../../types/global-settings'
 import Dropdown from '../common/dropdown'
 

@@ -16,7 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
 import ControlPoint from './control-point'
 import Point2D from '../../solver/point-2d'
 import { Palette } from '../../style/palette'

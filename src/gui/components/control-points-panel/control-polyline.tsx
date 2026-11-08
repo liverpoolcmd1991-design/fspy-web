@@ -16,8 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
-import { Circle, Group, Line } from 'react-konva'
 import Point2D from '../../solver/point-2d'
 import { Palette } from '../../style/palette'
 import { numberGlyph } from './glyph-paths'
@@ -30,64 +28,54 @@ interface ControlPolylineProps {
   dashed?: boolean
 }
 
-export default class ControlPolyline extends React.PureComponent<ControlPolylineProps> {
-  render() {
-
-    let coords: number[] = []
-    let xMean = 0
-    let yMean = 0
-    for (let point of this.props.points) {
-      xMean += (point.x / this.props.points.length)
-      yMean += (point.y / this.props.points.length)
-      coords.push(point.x)
-      coords.push(point.y)
-    }
-
-    return (
-      <Group>
-        <Line points={coords}
-          listening={false}
-          stroke={this.props.color}
-          strokeWidth={1}
-          opacity={this.props.dimmed ? 0.35 : 1}
-          dash={this.props.dashed ? [2, 3] : undefined}
-        />
-        {this.renderNumberCircle(xMean, yMean)}
-        {this.renderNumber(xMean, yMean)}
-      </Group>
-    )
+export default function ControlPolyline(props: ControlPolylineProps) {
+  if (props.points.length === 0) {
+    return null
   }
 
-  private renderNumberCircle(x: number, y: number) {
-    if (this.props.number === undefined) {
-      return null
-    }
+  let xMean = 0
+  let yMean = 0
+  const pairs: string[] = []
+  for (const point of props.points) {
+    xMean += point.x / props.points.length
+    yMean += point.y / props.points.length
+    pairs.push(`${point.x},${point.y}`)
+  }
 
-    return (
-      <Circle
-        listening={false}
-        x={x}
-        y={y}
-        radius={7}
-        fill={Palette.black}
-        opacity={0.4}
+  const xOffset = props.number === 1 ? -1 : 0
+
+  return (
+    <g className="pointer-events-none">
+      <polyline
+        points={pairs.join(' ')}
+        fill="none"
+        stroke={props.color}
+        strokeWidth={props.dimmed ? 1.15 : 1.65}
+        opacity={props.dimmed ? 0.45 : 0.95}
+        strokeDasharray={props.dashed ? '3, 4' : undefined}
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
-    )
-  }
-
-  private renderNumber(x: number, y: number) {
-    if (this.props.number === undefined) {
-      return null
-    }
-
-    // Hacky offset for the 1 digit
-    const xOffset = this.props.number == 1 ? -1 : 0
-
-    return numberGlyph(
-      this.props.number,
-      Palette.white,
-      { x: x + xOffset, y: y },
-      7
-    )
-  }
+      {props.number !== undefined && (
+        <>
+          <circle
+            cx={xMean}
+            cy={yMean}
+            r={8.5}
+            fill={Palette.black}
+            opacity={0.72}
+            stroke={props.color}
+            strokeWidth={1}
+          />
+          {numberGlyph(
+            props.number,
+            Palette.white,
+            { x: xMean + xOffset, y: yMean },
+            7.5
+          )}
+        </>
+      )}
+    </g>
+  )
 }
+

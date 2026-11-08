@@ -16,8 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
-import { Palette } from '../../style/palette'
+import React, { useState } from 'react'
 
 interface NumericInputFieldProps {
   precision?: number
@@ -27,146 +26,77 @@ interface NumericInputFieldProps {
   onSubmit(value: number): void
 }
 
-interface NumericInputFieldState {
-  isEditing: Boolean
-  editedValue: string
-  editedValueIsValid: Boolean
+export default function NumericInputField(props: NumericInputFieldProps) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [editedValue, setEditedValue] = useState(props.value.toString())
+
+  const parseNumeric = (str: string): number | undefined => {
+    const parsed = parseFloat(str)
+    return isNaN(parsed) ? undefined : parsed
+  }
+
+  const isValid = parseNumeric(editedValue) !== undefined
+
+  const displayValue = props.valueNotAvailable
+    ? 'n/a'
+    : props.precision !== undefined
+      ? props.value.toFixed(props.precision)
+      : props.value.toString()
+
+  const commitEdit = () => {
+    setIsEditing(false)
+    const num = parseNumeric(editedValue)
+    if (num !== undefined) {
+      props.onSubmit(num)
+    }
+  }
+
+  return (
+    <input
+      type="text"
+      disabled={props.isDisabled}
+      value={isEditing ? editedValue : displayValue}
+      onFocus={() => {
+        if (!props.isDisabled) {
+          setIsEditing(true)
+          setEditedValue(props.value.toString())
+        }
+      }}
+      onChange={(e) => {
+        if (!props.isDisabled) {
+          setEditedValue(e.target.value)
+        }
+      }}
+      onBlur={() => {
+        if (!props.isDisabled) {
+          if (isValid) {
+            commitEdit()
+          } else {
+            setIsEditing(false)
+          }
+        }
+      }}
+      onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (props.isDisabled) return
+        if (e.key === 'Escape') {
+          setIsEditing(false)
+          e.currentTarget.blur()
+        } else if (e.key === 'Enter' && isValid) {
+          e.preventDefault()
+          commitEdit()
+          e.currentTarget.blur()
+        }
+      }}
+      className={`w-16 px-2 py-1 text-xs font-mono tabular-nums rounded-md border transition-colors focus:outline-none ${
+        props.isDisabled
+          ? 'bg-[#121417]/50 border-slate-800/70 text-slate-500 cursor-not-allowed'
+          : isEditing
+            ? isValid
+              ? 'bg-[#121417] border-emerald-500 text-white'
+              : 'bg-[#121417] border-rose-500 text-rose-200'
+            : 'bg-[#121417] border-slate-700/80 text-slate-200 hover:border-slate-600'
+      }`}
+    />
+  )
 }
 
-export default class NumericInputField extends React.Component<NumericInputFieldProps, NumericInputFieldState> {
-
-  constructor(props: NumericInputFieldProps) {
-    super(props)
-    this.state = {
-      isEditing: false,
-      editedValue: props.value.toString(),
-      editedValueIsValid: true
-    }
-  }
-
-  handleChange(event: any) {
-    this.setState({
-      ...this.state,
-      editedValue: event.target.value,
-      editedValueIsValid: this.numericValue(event.target.value) !== undefined
-    })
-  }
-
-  handleSubmit(event: any) {
-    event.preventDefault()
-    this.finishEditing()
-    event.target.blur()
-  }
-
-  handleFocus(_: any) {
-    this.beginEditing()
-  }
-
-  handleBlur(_: any) {
-    this.cancelEditing()
-  }
-
-  render() {
-    let inputStyle: any = {
-      height: '22px',
-      outline: 'none',
-      width: '60px',
-      paddingLeft: '6px',
-      border: '1px solid ' + Palette.gray
-    }
-
-    if (this.props.isDisabled) {
-      inputStyle = {
-        ...inputStyle,
-        userSelect: 'none',
-        cursor: 'default',
-        color: Palette.disabledTextColor
-      }
-    }
-
-    if (this.state.isEditing) {
-      if (this.state.editedValueIsValid) {
-        inputStyle = {
-          ...inputStyle,
-          border: '1px solid ' + Palette.green
-        }
-      } else {
-        inputStyle = {
-          ...inputStyle,
-          border: '1px solid ' + Palette.red
-        }
-      }
-    }
-
-    let displayValue = this.props.precision ? this.props.value.toFixed(this.props.precision) : this.props.value
-    if (this.props.valueNotAvailable) {
-      displayValue = 'n/a'
-    }
-
-    return (
-      <input
-        disabled={this.props.isDisabled}
-        style={inputStyle}
-        type='text'
-        value={this.state.isEditing ? this.state.editedValue : displayValue}
-        onChange={(event: any) => {
-          if (!this.props.isDisabled) {
-            this.handleChange(event)
-          }
-        }}
-        onFocus={(event: any) => {
-          if (!this.props.isDisabled) {
-            this.handleFocus(event)
-          }
-        }}
-        onBlur={(event: any) => {
-          if (!this.props.isDisabled) {
-            this.handleBlur(event)
-          }
-        }}
-        onKeyDown={(event: any) => {
-          if (!this.props.isDisabled) {
-            if (event.key == 'Escape') {
-              this.cancelEditing()
-              event.target.blur()
-            } else if (event.key == 'Enter') {
-              if (this.state.editedValueIsValid) {
-                this.handleSubmit(event)
-              }
-            }
-          }
-        }}
-      />
-    )
-  }
-
-  private beginEditing() {
-    this.setState({
-      ...this.state,
-      isEditing: true,
-      editedValue: this.props.value.toString(),
-      editedValueIsValid: true
-    })
-  }
-
-  private finishEditing() {
-    this.setState({
-      ...this.state,
-      isEditing: false
-    })
-    let numericValue = this.numericValue(this.state.editedValue)
-    this.props.onSubmit(numericValue === undefined ? 0 : numericValue)
-  }
-
-  private cancelEditing() {
-    this.setState({
-      ...this.state,
-      isEditing: false
-    })
-  }
-
-  private numericValue(stringValue: string): number | undefined {
-    let value = parseFloat(stringValue)
-    return isNaN(value) ? undefined : value
-  }
-}

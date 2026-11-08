@@ -24,7 +24,7 @@ import Point2D from './point-2d'
 import Transform from './transform'
 import Vector3D from './vector-3d'
 import CoordinatesUtil, { ImageCoordinateFrame } from './coordinates-util'
-import { SolverResult, CameraParameters } from './solver-result'
+import { SolverResult, CameraParameters, VanishingPointResidual } from './solver-result'
 import { defaultSolverResult } from './../defaults/solver-result'
 import { cameraPresets } from './camera-presets'
 import strings from '../strings/strings'
@@ -93,11 +93,14 @@ export default class Solver {
 
     // Compute the input vanishing point in image plane coordinates
     const vanishingPointStates = [controlPointsBase.firstVanishingPoint]
+    const residuals: VanishingPointResidual[] = []
     let inputVanishingPoints = this.computeVanishingPointsFromControlPoints(
       image,
       vanishingPointStates,
-      result.errors
+      result.errors,
+      residuals
     )
+    result.vpResiduals = residuals
     this.validateVanishingPointAccuracy(
       vanishingPointStates,
       result.warnings
@@ -207,11 +210,14 @@ export default class Solver {
     }
 
     // Compute the two input vanishing points from the provided control points
+    const residuals: VanishingPointResidual[] = []
     let inputVanishingPoints = this.computeVanishingPointsFromControlPoints(
       image,
       [controlPointsBase.firstVanishingPoint, secondVanishingPointControlState],
-      errors
+      errors,
+      residuals
     )
+    result.vpResiduals = residuals
 
     if (!inputVanishingPoints) {
       result.errors = errors
@@ -231,11 +237,16 @@ export default class Solver {
         )
         break
       case PrincipalPointMode2VP.FromThirdVanishingPoint:
+        let thirdResiduals: VanishingPointResidual[] = []
         let thirdVanishingPointArray = this.computeVanishingPointsFromControlPoints(
           image,
           [controlPoints2VP.thirdVanishingPoint],
-          errors
+          errors,
+          thirdResiduals
         )
+        if (thirdResiduals.length > 0) {
+          residuals.push({ ...thirdResiduals[0], vpIndex: 2 })
+        }
         if (thirdVanishingPointArray) {
           let thirdVanishingPoint = thirdVanishingPointArray[0]
           principalPoint = MathUtil.triangleOrthoCenter(
@@ -632,15 +643,30 @@ export default class Solver {
   private static computeVanishingPointsFromControlPoints(
     image: ImageState,
     controlPointStates: VanishingPointControlState[],
-    errors: string[]
+    errors: string[],
+    outResiduals?: VanishingPointResidual[]
   ): Point2D[] | null {
     let result: Point2D[] = []
     for (let i = 0; i < controlPointStates.length; i++) {
-      let vanishingPoint = MathUtil.lineIntersection(
-        controlPointStates[i].lineSegments[0],
-        controlPointStates[i].lineSegments[1]
-      )
+      const segments = controlPointStates[i].lineSegments
+      let vanishingPoint = MathUtil.leastSquaresLineIntersection(segments)
       if (vanishingPoint) {
+        if (outResiduals) {
+          const segmentAnglesDeg = segments.map((seg) =>
+            MathUtil.lineSegmentAngleErrorDegrees(seg, vanishingPoint)
+          )
+          const sumSq = segmentAnglesDeg.reduce((acc, a) => acc + a * a, 0)
+          const rmsAngleDeg =
+            segmentAnglesDeg.length > 0
+              ? Math.sqrt(sumSq / segmentAnglesDeg.length)
+              : 0
+          outResiduals.push({
+            vpIndex: i,
+            segmentAnglesDeg,
+            rmsAngleDeg
+          })
+        }
+
         result.push(
           CoordinatesUtil.convert(
             vanishingPoint,

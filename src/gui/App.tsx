@@ -1,241 +1,366 @@
 /**
  * fSpy
  * Copyright (c) 2020 - Per Gantelius
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
-import ControlPointsContainer from './containers/control-points-container'
-import ResultContainer from './containers/result-container'
-import SettingsContainer from './containers/settings-container'
-
-import { StoreState } from './types/store-state'
-import { connect } from 'react-redux'
-import { AppAction, setImage, loadDefaultState, setSidePanelVisibility } from './actions'
-import { GlobalSettings } from './types/global-settings'
-import { UIState } from './types/ui-state'
-import { ImageState } from './types/image-state'
-import { SolverResult } from './solver/solver-result'
-import { ipcRenderer } from '../main/electron-polyfill/ipc'
-import { remote } from '../main/electron-polyfill/remote'
-import { NewProjectMessage, OpenProjectMessage, SaveProjectMessage, OpenImageMessage, ExportMessage, ExportType, SetSidePanelVisibilityMessage } from '../main/ipc-messages'
-import ProjectFile from './io/project-file'
-import { OpenDroppedProjectMessage, SpecifyExportPathMessage } from './ipc-messages'
-import { loadImage } from './io/util'
-import store from './store/store'
+import { useEffect, useRef } from 'react'
+import { useStore } from 'zustand'
+import ControlPointsPanel from './components/control-points-panel/control-points-panel'
+import ResultPanel from './components/result-panel/result-panel'
+import SettingsPanel from './components/settings-panel/settings-panel'
 import SplashScreen from './components/splash-screen'
-import { Dispatch } from 'redux'
 import MenuBar from './components/menu/menu-bar'
-import { Buffer } from 'buffer'
+import ExportHubModal from './components/modals/export-hub-modal'
+import GuideModal from './components/modals/guide-modal'
+import ProjectFile from './io/project-file'
+import { extractExifFromBuffer, loadImage } from './io/util'
+import {
+  loadWorkspaceFromIndexedDB,
+  saveWorkspaceToIndexedDB
+} from './io/workspace-persistence'
+import {
+  useFSpyStore,
+  exportBlenderPythonScript
+} from './store/use-fspy-store'
+import { saveAs } from 'file-saver'
 
-interface AppStateProps {
-  uiState: UIState,
-  globalSettings: GlobalSettings,
-  solverResult: SolverResult,
-  image: ImageState,
-}
+export default function App() {
+  const uiState = useFSpyStore((s) => s.uiState)
+  const image = useFSpyStore((s) => s.image)
+  const globalSettings = useFSpyStore((s) => s.globalSettings)
+  const calibrationSettingsBase = useFSpyStore((s) => s.calibrationSettingsBase)
+  const calibrationSettings1VP = useFSpyStore((s) => s.calibrationSettings1VP)
+  const calibrationSettings2VP = useFSpyStore((s) => s.calibrationSettings2VP)
+  const controlPointsStateBase = useFSpyStore((s) => s.controlPointsStateBase)
+  const controlPointsState1VP = useFSpyStore((s) => s.controlPointsState1VP)
+  const controlPointsState2VP = useFSpyStore((s) => s.controlPointsState2VP)
+  const resultDisplaySettings = useFSpyStore((s) => s.resultDisplaySettings)
+  const solverResult = useFSpyStore((s) => s.solverResult)
+  const toastMessage = useFSpyStore((s) => s.toastMessage)
+  const autoSaveEnabled = useFSpyStore((s) => s.autoSaveEnabled)
+  const snapshotSlotsEnabled = useFSpyStore((s) => s.snapshotSlotsEnabled)
 
-interface AppDispatchProps {
-  onImageFileDropped(fileName: string, imageBuffer: Buffer<ArrayBuffer>): void
-  onProjectFileDropped(filePath: string, buffer: Buffer): void
-  onOpenExampleProjectPressed(): void
+  const setImageData = useFSpyStore((s) => s.setImageData)
+  const loadProjectState = useFSpyStore((s) => s.loadProjectState)
+  const resetToNewProject = useFSpyStore((s) => s.resetToNewProject)
+  const setSidePanelVisibility = useFSpyStore((s) => s.setSidePanelVisibility)
+  const captureSnapshotSlot = useFSpyStore((s) => s.captureSnapshotSlot)
+  const restoreSnapshotSlot = useFSpyStore((s) => s.restoreSnapshotSlot)
+  const showToast = useFSpyStore((s) => s.showToast)
 
-  onNewProjectIPCMessage(): void
-  onOpenProjectIPCMessage(filePath: string, buffer: Buffer, isExampleProject: boolean): void
-  onSaveProjectAsIPCMessage(projectName: string | null): void
-  onOpenImageIPCMessage(fileName: string, imageBuffer: Buffer<ArrayBuffer>): void
-  onExportIPCMessage(exportType: ExportType): void
-  onSetSidePanelVisibilityIPCMessage(panelsAreVisible: boolean): void
-}
+  const undo = useStore(useFSpyStore.temporal, (state) => state.undo)
+  const redo = useStore(useFSpyStore.temporal, (state) => state.redo)
 
-type AppProps = AppStateProps & AppDispatchProps
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const hasRestoredAutoSaveRef = useRef(false)
 
-class App extends React.PureComponent<AppProps> {
+  // Restore workspace from IndexedDB on initial mount ONLY if user previously opted in
+  useEffect(() => {
+    if (!autoSaveEnabled || hasRestoredAutoSaveRef.current) return
+    hasRestoredAutoSaveRef.current = true
 
-  constructor(props: AppProps) {
-    super(props)
-  }
-
-  componentWillMount() {
-    this.registerIPCHandlers()
-
-    document.ondragover = (ev) => {
-      ev.preventDefault()
-      return false
-    }
-
-    document.ondragenter = (ev) => {
-      ev.preventDefault()
-      return false
-    }
-
-    document.ondragleave = (ev) => {
-      ev.preventDefault()
-      return false
-    }
-
-    document.ondrop = (ev) => {
-      if (ev.dataTransfer != null) {
-        let firstFile = ev.dataTransfer.files[0]
-        if (firstFile) {
-          let filePath = firstFile.name
-          firstFile.arrayBuffer().then(arrayBuffer => {
-            const buffer = Buffer.from(arrayBuffer)
-            let isProjectFile = ProjectFile.isProjectFile(buffer)
-            if (isProjectFile) {
-              this.props.onProjectFileDropped(filePath, buffer)
-            } else {
-              // try to open the file as an image
-              this.props.onImageFileDropped(filePath, buffer)
-            }
-          }).catch((error: unknown) => console.error('Failed to load dropped file:', error))
+    void loadWorkspaceFromIndexedDB().then((saved) => {
+      if (!saved?.imageBytes) return
+      const imageBytes = saved.imageBytes
+      loadImage(
+        imageBytes,
+        (width: number, height: number, url: string) => {
+          loadProjectState(
+            saved.savedState,
+            {
+              width,
+              height,
+              url,
+              data: imageBytes
+            },
+            saved.projectName || 'Restored Workspace',
+            false
+          )
+          showToast('Restored workspace from opt-in browser auto-save')
+        },
+        () => {
+          // Ignore invalid buffer
         }
-        ev.preventDefault()
-        return false
-      }
-      return true
-    }
-  }
+      )
+    })
+  }, [autoSaveEnabled, loadProjectState, showToast])
 
-  render() {
-    const hasImage = this.props.image.data !== null
-    return (
-      <div id='app-container'>
-        <MenuBar />
-        <div id='content-container'>
-          {hasImage
-            ? <>
-              <SettingsContainer isVisible={this.props.uiState.sidePanelsAreVisible} />
-              <ControlPointsContainer />
-              <ResultContainer isVisible={this.props.uiState.sidePanelsAreVisible} />
-            </>
-            : <SplashScreen onClickedLoadExampleProject={this.props.onOpenExampleProjectPressed} />}
-        </div>
-      </div>
+  // Debounced IndexedDB persistence when autoSaveEnabled is true
+  useEffect(() => {
+    if (!autoSaveEnabled || !image.data) return
+    const timer = window.setTimeout(() => {
+      void saveWorkspaceToIndexedDB({
+        savedState: {
+          globalSettings,
+          calibrationSettingsBase,
+          calibrationSettings1VP,
+          calibrationSettings2VP,
+          controlPointsStateBase,
+          controlPointsState1VP,
+          controlPointsState2VP,
+          resultDisplaySettings,
+          cameraParameters: solverResult.cameraParameters
+        },
+        projectName: uiState.projectName,
+        imageWidth: image.width,
+        imageHeight: image.height,
+        imageBytes: image.data,
+        updatedAt: Date.now()
+      })
+    }, 650)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    autoSaveEnabled,
+    uiState.projectName,
+    image.data,
+    image.width,
+    image.height,
+    globalSettings,
+    calibrationSettingsBase,
+    calibrationSettings1VP,
+    calibrationSettings2VP,
+    controlPointsStateBase,
+    controlPointsState1VP,
+    controlPointsState2VP,
+    resultDisplaySettings,
+    solverResult.cameraParameters
+  ])
+
+  const handleLoadImageBytes = async (fileName: string, bytes: Uint8Array) => {
+    const exif = await extractExifFromBuffer(bytes)
+    loadImage(
+      bytes,
+      (width: number, height: number, url: string) => {
+        setImageData(fileName, url, bytes, width, height, exif)
+        const exifSummary = exif?.focalLength35mm
+          ? ` (EXIF ${exif.focalLength35mm}mm 35mm eq)`
+          : exif?.focalLength
+            ? ` (EXIF ${exif.focalLength}mm)`
+            : ''
+        showToast(`Loaded ${fileName}${exifSummary}`)
+      },
+      () => {
+        showToast(`Could not load image "${fileName}". Supported formats: JPEG, PNG, WebP, BMP, SVG.`)
+      }
     )
   }
 
-  private registerIPCHandlers() {
-    ipcRenderer.on(NewProjectMessage.type, (_: any, __: NewProjectMessage) => {
-      this.props.onNewProjectIPCMessage()
-    })
-
-    ipcRenderer.on(OpenProjectMessage.type, (_: any, message: OpenProjectMessage) => {
-      this.props.onOpenProjectIPCMessage(message.filePath, message.buffer, message.isExampleProject)
-    })
-
-    ipcRenderer.on(SaveProjectMessage.type, (_: any, __: SaveProjectMessage) => {
-      this.props.onSaveProjectAsIPCMessage(this.props.uiState.projectName)
-    })
-
-    ipcRenderer.on(OpenImageMessage.type, (_: any, message: OpenImageMessage) => {
-      this.props.onOpenImageIPCMessage(message.fileName, message.buffer)
-    })
-
-    ipcRenderer.on(ExportMessage.type, (_: any, message: ExportMessage) => {
-      this.props.onExportIPCMessage(message.exportType)
-    })
-
-    ipcRenderer.on(SetSidePanelVisibilityMessage.type, (_: any, message: SetSidePanelVisibilityMessage) => {
-      this.props.onSetSidePanelVisibilityIPCMessage(message.panelsAreVisible)
-    })
-  }
-}
-
-export function mapStateToProps(state: StoreState): AppStateProps {
-  return {
-    uiState: state.uiState,
-    globalSettings: state.globalSettings,
-    solverResult: state.solverResult,
-    image: state.image
-  }
-}
-
-export function mapDispatchToProps(dispatch: Dispatch<AppAction>): AppDispatchProps {
-  return {
-    onImageFileDropped: (fileName: string, imageBuffer: Buffer<ArrayBuffer>) => {
-      loadImage(
-        imageBuffer,
-        (width: number, height: number, url: string) => {
-          dispatch(setImage(fileName, url, imageBuffer, width, height))
-        },
-        () => {
-          remote.dialog.showErrorBox(
-            'Failed to load image data',
-            'Could not load the image data. Is this a valid image file?'
-          )
-        }
-      )
-    },
-    onProjectFileDropped: (projectPath: string, buffer: Buffer) => {
-      ipcRenderer.send(
-        OpenDroppedProjectMessage.type,
-        new OpenDroppedProjectMessage(projectPath, buffer)
-      )
-    },
-    onOpenExampleProjectPressed: () => {
-      ProjectFile.loadExample(dispatch)
-    },
-    onNewProjectIPCMessage: () => {
-      dispatch(loadDefaultState())
-    },
-    onOpenProjectIPCMessage: (filePath: string, buffer: Buffer, isExampleProject: boolean) => {
-      ProjectFile.load(filePath, buffer, dispatch, isExampleProject)
-    },
-    onSaveProjectAsIPCMessage: (projectName: string | null) => {
-      ProjectFile.save(projectName)
-    },
-    onOpenImageIPCMessage: (fileName: string, imageBuffer: Buffer<ArrayBuffer>) => {
-      loadImage(
-        imageBuffer,
-        (width: number, height: number, url: string) => {
-          dispatch(setImage(fileName, url, imageBuffer, width, height))
-        },
-        () => {
-          alert('Failed to load image')
-        }
-      )
-    },
-    onExportIPCMessage: (exportType: ExportType) => {
-      let dataToExport: any | null = null
-      const storeState: StoreState = store.getState()
-      switch (exportType) {
-        case ExportType.CameraParametersJSON:
-          const cameraParameters = storeState.solverResult.cameraParameters
-          if (cameraParameters) {
-            dataToExport = JSON.stringify(cameraParameters, null, 2)
-          }
-          break
-        case ExportType.ProjectImage:
-          dataToExport = storeState.image.data
-          break
-        default:
-          exportType satisfies never
-      }
-
-      if (dataToExport) {
-        ipcRenderer.send(
-          SpecifyExportPathMessage.type,
-          new SpecifyExportPathMessage(exportType, dataToExport)
-        )
-      }
-    },
-    onSetSidePanelVisibilityIPCMessage: (panelsAreVisible: boolean) => {
-      dispatch(setSidePanelVisibility(panelsAreVisible))
+  const handleFileBytes = async (fileName: string, arrayBuffer: ArrayBuffer) => {
+    const bytes = new Uint8Array(arrayBuffer)
+    if (ProjectFile.isProjectFile(bytes)) {
+      ProjectFile.load(fileName, bytes, false)
+    } else {
+      await handleLoadImageBytes(fileName, bytes)
     }
   }
-}
 
-export default connect(mapStateToProps, mapDispatchToProps)(App)
+  const handleSaveProject = () => {
+    if (!image.data) {
+      showToast('Load an image before saving a .fspy project.')
+      return
+    }
+    const existingName = uiState.projectName
+      ? uiState.projectName.replace(/\.fspy$/i, '')
+      : 'calibration'
+    ProjectFile.save(`${existingName || 'calibration'}.fspy`)
+  }
+
+  const handleExportBlenderScript = () => {
+    if (!solverResult.cameraParameters) {
+      showToast('Solve valid camera parameters before exporting.')
+      return
+    }
+    exportBlenderPythonScript(useFSpyStore.getState())
+    showToast('Exported Blender Python script (.py)')
+  }
+
+  const handleExportCameraJson = () => {
+    if (!solverResult.cameraParameters) {
+      showToast('Solve valid camera parameters before exporting.')
+      return
+    }
+    const jsonString = JSON.stringify(solverResult.cameraParameters, null, 2)
+    const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' })
+    saveAs(blob, 'camera-parameters.json')
+    showToast('Exported camera parameters (camera-parameters.json)')
+  }
+
+  const handleExportProjectImage = () => {
+    if (!image.data) return
+    const safeBuffer = new Uint8Array(image.data).buffer
+    const blob = new Blob([safeBuffer])
+    saveAs(blob, 'reference-image.png')
+    showToast('Exported reference image')
+  }
+
+  // Global drag-and-drop, clipboard image paste, and studio keyboard shortcuts
+  useEffect(() => {
+    const onDragOver = (ev: DragEvent) => {
+      ev.preventDefault()
+    }
+    const onDrop = (ev: DragEvent) => {
+      ev.preventDefault()
+      const file = ev.dataTransfer?.files?.[0]
+      if (file) {
+        void file.arrayBuffer().then((ab) => {
+          void handleFileBytes(file.name, ab)
+        })
+      }
+    }
+    const onPaste = (ev: ClipboardEvent) => {
+      const items = ev.clipboardData?.items
+      if (!items) return
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) {
+            void file.arrayBuffer().then((ab) => {
+              void handleFileBytes(file.name || 'clipboard-image.png', ab)
+            })
+            break
+          }
+        }
+      }
+    }
+    const onKeyDown = (ev: KeyboardEvent) => {
+      const target = ev.target as HTMLElement | null
+      const isInput =
+        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')
+
+      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'z') {
+        if (isInput) return
+        ev.preventDefault()
+        if (ev.shiftKey) {
+          redo()
+        } else {
+          undo()
+        }
+      } else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'y') {
+        if (isInput) return
+        ev.preventDefault()
+        redo()
+      } else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 's') {
+        ev.preventDefault()
+        handleSaveProject()
+      } else if (ev.altKey && !isInput && snapshotSlotsEnabled) {
+        const slotMap: Record<string, 0 | 1 | 2 | 3> = {
+          '1': 0,
+          '2': 1,
+          '3': 2,
+          '4': 3
+        }
+        const slot = slotMap[ev.key]
+        if (slot !== undefined) {
+          ev.preventDefault()
+          if (ev.shiftKey) {
+            captureSnapshotSlot(slot)
+          } else {
+            restoreSnapshotSlot(slot)
+          }
+        }
+      } else if (ev.key === 'Tab' && !isInput) {
+        if (useFSpyStore.getState().image.url !== null) {
+          ev.preventDefault()
+          const current = useFSpyStore.getState().uiState.sidePanelsAreVisible
+          setSidePanelVisibility(!current)
+        }
+      }
+    }
+
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    window.addEventListener('paste', onPaste)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+      window.removeEventListener('paste', onPaste)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  })
+
+  // Auto-dismiss toast notifications
+  useEffect(() => {
+    if (!toastMessage) return
+    const timer = window.setTimeout(() => {
+      showToast(null)
+    }, 4200)
+    return () => window.clearTimeout(timer)
+  }, [toastMessage, showToast])
+
+  const hasImageLoaded = image.url !== null
+
+  return (
+    <div className='h-screen w-screen overflow-hidden flex flex-col bg-[#0b0b0e] text-zinc-100'>
+      {/* Hidden File Input for Open Image / .fspy */}
+      <input
+        ref={fileInputRef}
+        type='file'
+        accept='.fspy,image/*'
+        className='hidden'
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) {
+            void file.arrayBuffer().then((ab) => {
+              void handleFileBytes(file.name, ab)
+            })
+          }
+          e.target.value = ''
+        }}
+      />
+
+      <MenuBar
+        onNewProject={() => {
+          resetToNewProject()
+          showToast('Started new project')
+        }}
+        onOpenFilePicker={() => fileInputRef.current?.click()}
+        onLoadExampleProject={() => {
+          void ProjectFile.loadExample()
+        }}
+        onSaveProject={handleSaveProject}
+        onExportBlenderScript={handleExportBlenderScript}
+        onExportCameraJson={handleExportCameraJson}
+        onExportProjectImage={handleExportProjectImage}
+      />
+
+      {hasImageLoaded ? (
+        <div className='flex-1 flex min-h-0 overflow-hidden relative'>
+          {uiState.sidePanelsAreVisible && <SettingsPanel />}
+          <ControlPointsPanel />
+          {uiState.sidePanelsAreVisible && (
+            <ResultPanel
+              onExportJson={handleExportCameraJson}
+              onExportBlenderScript={handleExportBlenderScript}
+            />
+          )}
+        </div>
+      ) : (
+        <SplashScreen
+          onClickedOpenFile={() => fileInputRef.current?.click()}
+          onClickedLoadExampleProject={() => {
+            void ProjectFile.loadExample()
+          }}
+        />
+      )}
+
+      {/* Multi-DCC & Composite Calibration PNG Export Hub Modal */}
+      <ExportHubModal />
+
+      {/* Quick-Start Visual Guide Modal */}
+      <GuideModal />
+
+      {/* Non-intrusive Studio Toast Notification */}
+      {toastMessage && (
+        <div className='fixed bottom-14 left-1/2 -translate-x-1/2 z-50 pointer-events-none'>
+          <div className='px-3.5 py-2 rounded-lg bg-zinc-900/95 border border-zinc-700/90 text-xs text-zinc-100 shadow-xl backdrop-blur-md flex items-center gap-2'>
+            <span className='w-1.5 h-1.5 rounded-full bg-amber-400' />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

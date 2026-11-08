@@ -16,11 +16,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import type { Buffer } from 'buffer'
-
 export interface ImageState {
-  width: number | null,
-  height: number | null,
-  url: string | null,
-  data: Buffer<ArrayBuffer> | null
+  width: number | null
+  height: number | null
+  url: string | null
+  data: Uint8Array | null
 }
+

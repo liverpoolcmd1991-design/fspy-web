@@ -1,0 +1,5 @@
+{
+  "name": "fSpy Studio — Camera Matching & Calibration",
+  "description": "Modernized open-source still image camera matching and perspective calibration studio with 1-VP/2-VP solving, Three.js 3D verification, EXIF extraction, and Blender/JSON export.",
+  "requestFramePermissions": []
+}

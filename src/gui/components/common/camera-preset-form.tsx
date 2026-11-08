@@ -16,56 +16,66 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
-import CameraPresetsDropdown from './../common/camera-presets-dropdown'
-import NumericInputField from './../common/numeric-input-field'
-import PanelSpacer from './../common/panel-spacer'
-import { CameraData } from '../../types/calibration-settings'
-import strings from '../../strings/strings'
+import React from 'react'
 import { cameraPresets } from '../../solver/camera-presets'
+import strings from '../../strings/strings'
+import { CameraData } from '../../types/calibration-settings'
+import CameraPresetsDropdown from './camera-presets-dropdown'
+import NumericInputField from './numeric-input-field'
 
 export interface CameraPresetFormProps {
   absoluteFocalLength: number
   cameraData: CameraData
   onCameraPresetChange(cameraPreset: string | null): void
-  onSensorSizeChange(width: number | undefined, height: number | undefined): void
+  onSensorSizeChange(
+    width: number | undefined,
+    height: number | undefined
+  ): void
+  children?: React.ReactNode
 }
 
-export default class CameraPresetForm extends React.PureComponent<CameraPresetFormProps> {
-  render() {
-    let sensorWidth = this.props.cameraData.customSensorWidth
-    let sensorHeight = this.props.cameraData.customSensorHeight
-    let presetId = this.props.cameraData.presetId
-    if (presetId != null) {
-      const preset = cameraPresets[presetId]
-      if (preset) {
-        sensorWidth = preset.sensorWidth
-        sensorHeight = preset.sensorHeight
-      }
+export default function CameraPresetForm(props: CameraPresetFormProps) {
+  let sensorWidth = props.cameraData.customSensorWidth
+  let sensorHeight = props.cameraData.customSensorHeight
+  const presetId = props.cameraData.presetId
+  if (presetId != null) {
+    const preset = cameraPresets[presetId]
+    if (preset) {
+      sensorWidth = preset.sensorWidth
+      sensorHeight = preset.sensorHeight
     }
-
-    return (
-      <div>
-        <CameraPresetsDropdown
-          cameraData={this.props.cameraData}
-          onPresetChanged={this.props.onCameraPresetChange}
-        />
-        <PanelSpacer />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        Sensor <NumericInputField
-          isDisabled={presetId !== null}
-          value={sensorWidth}
-          onSubmit={(value: number) => { this.props.onSensorSizeChange(value, undefined) }} />
-        x
-        <NumericInputField
-          isDisabled={presetId !== null}
-          value={sensorHeight}
-          onSubmit={(value: number) => { this.props.onSensorSizeChange(undefined, value) }} /> {strings.unitMm}
-        </div>
-        <PanelSpacer />
-
-        { this.props.children }
-      </div>
-    )
   }
+
+  return (
+    <div className="space-y-2.5">
+      <CameraPresetsDropdown
+        cameraData={props.cameraData}
+        onPresetChanged={props.onCameraPresetChange}
+      />
+      <div className="flex items-center justify-between gap-1.5 text-xs text-slate-300">
+        <span className="text-slate-400">Sensor</span>
+        <div className="flex items-center gap-1.5">
+          <NumericInputField
+            isDisabled={presetId !== null}
+            value={sensorWidth}
+            onSubmit={(value: number) => {
+              props.onSensorSizeChange(value, undefined)
+            }}
+          />
+          <span className="text-slate-500">×</span>
+          <NumericInputField
+            isDisabled={presetId !== null}
+            value={sensorHeight}
+            onSubmit={(value: number) => {
+              props.onSensorSizeChange(undefined, value)
+            }}
+          />
+          <span className="text-slate-500 text-[11px]">{strings.unitMm}</span>
+        </div>
+      </div>
+
+      {props.children}
+    </div>
+  )
 }
+

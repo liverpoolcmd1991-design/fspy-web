@@ -16,11 +16,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import React from 'react'
-import ControlPoint from './control-point'
 import Point2D from '../../solver/point-2d'
-import { Group, RegularPolygon } from 'react-konva'
 import { Palette } from '../../style/palette'
+import ControlPoint from './control-point'
 import ControlPolyline from './control-polyline'
 
 interface ReferenceDistanceAnchorControlProps {
@@ -32,71 +30,62 @@ interface ReferenceDistanceAnchorControlProps {
   dragCallback(position: Point2D): void
 }
 
-export default class ReferenceDistanceAnchorControl extends React.PureComponent<ReferenceDistanceAnchorControlProps> {
+export default function ReferenceDistanceAnchorControl(
+  props: ReferenceDistanceAnchorControlProps
+) {
+  const r = 15
+  const cx = props.absolutePosition.x
+  const cy = props.absolutePosition.y
+  const trianglePoints = [
+    `${cx},${cy - r}`,
+    `${cx - r * 0.866},${cy + r * 0.5}`,
+    `${cx + r * 0.866},${cy + r * 0.5}`,
+  ].join(' ')
 
-  render() {
-    return (
-      <Group>
-        {this.renderLines()}
-        {this.renderPositionWarning()}
-        <ControlPoint
-          absolutePosition={this.props.absolutePosition}
-          onControlPointDrag={this.props.dragCallback}
-          fill={Palette.referenceDistanceControlColor}
+  return (
+    <g>
+      {props.anchorPositionIsValid ? (
+        <g>
+          <ControlPolyline
+            dimmed={true}
+            dashed={true}
+            color={Palette.referenceDistanceControlColor}
+            points={[props.origin, props.uIntersection]}
+          />
+          <ControlPolyline
+            dimmed={true}
+            dashed={true}
+            color={Palette.referenceDistanceControlColor}
+            points={[props.origin, props.vIntersection]}
+          />
+          <ControlPolyline
+            dimmed={true}
+            dashed={true}
+            color={Palette.referenceDistanceControlColor}
+            points={[props.absolutePosition, props.uIntersection]}
+          />
+          <ControlPolyline
+            dimmed={true}
+            dashed={true}
+            color={Palette.referenceDistanceControlColor}
+            points={[props.absolutePosition, props.vIntersection]}
+          />
+        </g>
+      ) : (
+        <polygon
+          points={trianglePoints}
+          fill="none"
+          stroke={Palette.orange}
+          strokeWidth={1.5}
+          className="pointer-events-none"
         />
-      </Group>
-    )
-  }
-
-  private renderPositionWarning() {
-    if (this.props.anchorPositionIsValid) {
-      return null
-    }
-
-    return (
-      <RegularPolygon
-        sides={3}
-        radius={15}
-        x={this.props.absolutePosition.x}
-        y={this.props.absolutePosition.y}
-        stroke={Palette.orange}
-        strokeWidth={1}
+      )}
+      <ControlPoint
+        absolutePosition={props.absolutePosition}
+        onControlPointDrag={props.dragCallback}
+        fill={Palette.referenceDistanceControlColor}
       />
-    )
-  }
-
-  private renderLines() {
-    if (!this.props.anchorPositionIsValid) {
-      return null
-    }
-
-    return (
-      <Group>
-        <ControlPolyline
-          dimmed={true}
-          dashed={true}
-          color={Palette.referenceDistanceControlColor}
-          points={[this.props.origin, this.props.uIntersection]}
-        />
-        <ControlPolyline
-          dimmed={true}
-          dashed={true}
-          color={Palette.referenceDistanceControlColor}
-          points={[this.props.origin, this.props.vIntersection]}
-        />
-        <ControlPolyline
-          dimmed={true}
-          dashed={true}
-          color={Palette.referenceDistanceControlColor}
-          points={[this.props.absolutePosition, this.props.uIntersection]}
-        />
-        <ControlPolyline
-          dimmed={true}
-          dashed={true}
-          color={Palette.referenceDistanceControlColor}
-          points={[this.props.absolutePosition, this.props.vIntersection]}
-        />
-      </Group>
-    )
-  }
+    </g>
+  )
 }
+

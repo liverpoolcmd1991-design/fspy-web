@@ -1,146 +1,78 @@
-/**
- * fSpy
- * Copyright (c) 2020 - Per Gantelius
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-  --image-panel-background: #252B2E;
-  --image-panel-button-background: #374146;
-}
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
 
-body {
-  margin: 0;
-  /* TODO handle overflow gracefully */
-  /* min-width: 800px;
-  min-height: 768px; */
-  padding: 0;
-  user-select: none;
-}
-
-textarea, body, button, input {
-  font: caption;
-  font-size: 12px;
-  color: WindowText;
-}
-
-textarea {
-
-  width: 100%;
-  height: 80px;
-  resize: none;
-  border: none;
-    overflow: auto;
-    outline: none;
-
-    -webkit-box-shadow: none;
-    -moz-box-shadow: none;
-    box-shadow: none;
-
-    -webkit-box-sizing: border-box;
-       -moz-box-sizing: border-box;
-            box-sizing: border-box;
-}
-
-#app-container {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-
-#content-container {
-  display: flex;
-  flex-grow: 1;
-}
-
-#left-panel {
-  flex: 0 0 250px;
-  max-width: 250px;
-}
-
-#panel-container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-#panel-top-container {
-  flex-grow: 1;
-  overflow-y: auto;
-}
-
-#center-panel {
-  color: #898E91;
-  background-color: var(--image-panel-background);
-  flex-grow: 1;
-  position: relative;
-  overflow: hidden;
-}
-
-#right-panel {
-  flex: 0 0 250px;
-  max-width: 250px;
-}
-
-#image-panel {
-  width: 100%;
-  height: 100%;
-}
-
-.side-panel {
-  background-color: Menu;
-}
-
-.panel-group-title {
-  margin-bottom: 5px;
-  margin-left: 1px;
-}
-
-.panel-section {
-  padding: 10px 10px 10px 10px;
-}
-
-.bottom-border {
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.top-border {
-  border-top: 1px solid #e0e0e0;
-}
-
-:not(input):not(textarea),
-:not(input):not(textarea)::after,
-:not(input):not(textarea)::before {
-    -webkit-user-select: none;
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-sans);
+    background-color: #121417;
+    color: #e2e8f0;
     user-select: none;
-    cursor: default;
+    overflow: hidden;
+  }
+
+  input, select, button, textarea {
+    font-family: inherit;
+  }
 }
 
-.exporter-instructions-container li {
-  padding-bottom: 10px;
+/* Custom sleek studio scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.copy-button {
-  background-color: #e8e8e8;
-  color: #909090;
-  outline: none;
-  border: none;
-  box-shadow: none;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.copy-button:active {
-  background-color: #c0c0c0;
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 3px;
 }
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.35);
+}
+
+/* Custom range slider for dark DCC studio */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 999px;
+  background: #262a32;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -4px;
+  background-color: #38bdf8;
+  height: 13px;
+  width: 13px;
+  border-radius: 50%;
+  border: 2px solid #0f172a;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+
+input[type='range']:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+  background-color: #7dd3fc;
+}
+
+input[type='range']:disabled::-webkit-slider-thumb {
+  background-color: #475569;
+}
+

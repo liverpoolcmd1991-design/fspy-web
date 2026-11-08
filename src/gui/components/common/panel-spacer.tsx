@@ -16,8 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
-
 export default function PanelSpacer() {
   return (
     <div style={{ height: '10px' }} />

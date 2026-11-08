@@ -16,39 +16,88 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { Buffer } from 'buffer'
-import syncFetch from 'sync-fetch'
+import exifr from 'exifr'
+
+export interface ExtractedExifData {
+  make?: string
+  model?: string
+  focalLength?: number
+  focalLength35mm?: number
+}
 
 export function loadImage(
-  imageBuffer: Buffer<ArrayBuffer>,
+  imageBuffer: Uint8Array,
   onLoad: (width: number, height: number, url: string) => void,
   onError: () => void
 ) {
-  let blob = new Blob([imageBuffer])
-  let url = URL.createObjectURL(blob)
-  let image = new Image()
+  const safeArrayBuffer = new Uint8Array(imageBuffer).buffer
+  const blob = new Blob([safeArrayBuffer])
+  const url = URL.createObjectURL(blob)
+  const image = new Image()
   image.src = url
-  image.onload = (_: Event) => {
+  image.onload = () => {
     onLoad(image.width, image.height, url)
   }
-  image.onerror = (_) => {
+  image.onerror = () => {
+    URL.revokeObjectURL(url)
     onError()
   }
 }
 
+export async function extractExifFromBuffer(imageBuffer: Uint8Array): Promise<ExtractedExifData | null> {
+  try {
+    const safeArrayBuffer = new Uint8Array(imageBuffer).buffer
+    const parsed = await exifr.parse(safeArrayBuffer, [
+      'Make',
+      'Model',
+      'FocalLength',
+      'FocalLengthIn35mmFormat',
+      'FocalLengthIn35mmFilm',
+    ])
+    if (!parsed) {
+      return null
+    }
+    const focalLength35mm =
+      typeof parsed.FocalLengthIn35mmFormat === 'number'
+        ? parsed.FocalLengthIn35mmFormat
+        : typeof parsed.FocalLengthIn35mmFilm === 'number'
+          ? parsed.FocalLengthIn35mmFilm
+          : undefined
+
+    const focalLength = typeof parsed.FocalLength === 'number' ? parsed.FocalLength : undefined
+    const make = typeof parsed.Make === 'string' ? parsed.Make.trim() : undefined
+    const model = typeof parsed.Model === 'string' ? parsed.Model.trim() : undefined
+
+    if (!focalLength && !focalLength35mm && !make && !model) {
+      return null
+    }
+
+    return {
+      make,
+      model,
+      focalLength,
+      focalLength35mm,
+    }
+  } catch (_err) {
+    return null
+  }
+}
+
 export function resourceURL(fileName: string): string {
-  // Leftover function from the original repo kept to minimize changes
   return fileName
 }
 
 export function resourcePath(fileName: string): string {
-  // Leftover function from the original repo kept to minimize changes
   return fileName
 }
 
-export function fetchBytesSync(url: string): Buffer {
-  // TODO(ntestu): use async fetch instead
-  return Buffer.from(syncFetch(url).arrayBuffer())
+export async function fetchBytesAsync(url: string): Promise<Uint8Array> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.statusText}`)
+  }
+  const arrayBuffer = await response.arrayBuffer()
+  return new Uint8Array(arrayBuffer)
 }
 
 export function removeExtension(fileName: string, extension: string): string {
@@ -63,3 +112,4 @@ export function removeAllExtensions(fileName: string): string {
   const end = fileName.indexOf('.')
   return end < 0 ? fileName : fileName.slice(0, end)
 }
+

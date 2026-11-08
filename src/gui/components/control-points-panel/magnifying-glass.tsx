@@ -16,7 +16,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
 import Point2D from '../../solver/point-2d'
 
 interface MagnifyingGlassProps {
@@ -27,58 +26,74 @@ interface MagnifyingGlassProps {
   imageSrc: string | null
 }
 
-export default class MagnifyingGlass extends React.PureComponent<MagnifyingGlassProps> {
-  render() {
-    const diameter = 180
-    const zoom = 20 * diameter / this.props.imageWith
-    if (!this.props.imageSrc) {
-      return null
-    }
-    const xGlass = (this.props.position.x - diameter / 2)
-    const yGlass = (this.props.position.y - diameter / 2)
-    const xBg = -zoom * this.props.imageWith * this.props.relativeImagePosition.x + 0.5 * diameter
-    const yBg = -zoom * this.props.imageHeight * this.props.relativeImagePosition.y + 0.5 * diameter
-    const crossSize = 24
-    return (
+export default function MagnifyingGlass(props: MagnifyingGlassProps) {
+  const diameter = 176
+  const zoom = (20 * diameter) / props.imageWith
+  if (!props.imageSrc) {
+    return null
+  }
+  const xGlass = props.position.x - diameter / 2
+  const yGlass = props.position.y - diameter / 2
+  const xBg =
+    -zoom * props.imageWith * props.relativeImagePosition.x + 0.5 * diameter
+  const yBg =
+    -zoom * props.imageHeight * props.relativeImagePosition.y + 0.5 * diameter
+  const crossSize = 28
+
+  return (
+    <div
+      className="pointer-events-none z-30 shadow-2xl"
+      style={{
+        willChange: 'transform',
+        width: `${diameter}px`,
+        height: `${diameter}px`,
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        overflow: 'hidden',
+        border: '2px solid #38bdf8',
+        borderRadius: '50%',
+        backgroundColor: '#0f172a',
+        transform: `translate(${xGlass}px, ${yGlass}px)`,
+      }}
+    >
       <div
         style={{
           willChange: 'transform',
-          width: diameter + 'px',
-          height: diameter + 'px',
-          position: 'absolute',
-          overflow: 'hidden',
-          border: '1px solid #202020',
-          borderRadius: '50%',
-          transform: 'translate(' + xGlass + 'px, ' + yGlass + 'px)'
-        }}>
-        <div style={{
-          willChange: 'transform',
-          backgroundColor: '#ff0000',
           backgroundRepeat: 'no-repeat',
-          backgroundImage: 'url(' + this.props.imageSrc + ')',
+          backgroundImage: `url(${props.imageSrc})`,
           backgroundSize: 'cover',
-          width: zoom * this.props.imageWith + 'px',
-          height: zoom * this.props.imageHeight + 'px',
-          transform: 'translate(' + xBg + 'px, ' + yBg + 'px)'
-        }}>
-        </div>
-        <div style={{
+          imageRendering: 'pixelated',
+          width: `${zoom * props.imageWith}px`,
+          height: `${zoom * props.imageHeight}px`,
+          transform: `translate(${xBg}px, ${yBg}px)`,
+        }}
+      />
+      <div
+        style={{
           width: crossSize,
           height: 1,
-          backgroundColor: 'white',
+          backgroundColor: '#38bdf8',
           position: 'absolute',
           top: diameter / 2,
-          left: diameter / 2 - crossSize / 2
-        }} ></div>
-        <div style={{
+          left: diameter / 2 - crossSize / 2,
+        }}
+      />
+      <div
+        style={{
           width: 1,
           height: crossSize,
-          backgroundColor: 'white',
+          backgroundColor: '#38bdf8',
           position: 'absolute',
           top: diameter / 2 - crossSize / 2,
-          left: diameter / 2
-        }} ></div>
+          left: diameter / 2,
+        }}
+      />
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] font-mono tabular-nums text-sky-200 bg-slate-950/85 px-1.5 py-0.5 rounded">
+        {(props.relativeImagePosition.x * props.imageWith).toFixed(1)},{' '}
+        {(props.relativeImagePosition.y * props.imageHeight).toFixed(1)}
       </div>
-    )
-  }
+    </div>
+  )
 }
+

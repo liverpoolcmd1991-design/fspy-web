@@ -16,8 +16,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import React, { createRef } from 'react'
-import { Palette } from '../../style/palette'
+import { ChevronDown } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+
+export interface DropdownOption<T> {
+  id: string
+  value: T
+  title: string
+  circleColor?: string
+  strokeCircle?: boolean
+}
 
 export interface DropdownProps<T> {
   options: DropdownOption<T>[]
@@ -26,233 +34,97 @@ export interface DropdownProps<T> {
   onOptionSelected(value: T): void
 }
 
-interface DropdownState {
-  menuIsVisible: boolean
-}
+export default function Dropdown<T>(props: DropdownProps<T>) {
+  const [menuIsVisible, setMenuIsVisible] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-interface DropdownOption<T> {
-  id: string
-  value: T
-  title: string
-  circleColor?: string
-  strokeCircle?: boolean
-}
-
-const menuHeight = 24
-
-const circleStyle = {
-  display: 'inline-block',
-  marginRight: '5px'
-}
-
-const filledCircleStyle = {
-  ...circleStyle,
-  width: '10px',
-  height: '10px',
-  borderRadius: '5px'
-}
-
-const strokedCircleStyle = {
-  ...circleStyle,
-  width: '8px',
-  height: '8px',
-  borderRadius: '5px'
-}
-
-const menuContainerStyle = {
-  width: '100%'
-}
-
-const menuCellStyle: any = {
-  textAlign: 'left',
-  backgroundColor: Palette.white,
-  width: '100%',
-  padding: 0,
-  paddingLeft: '5px',
-  height: menuHeight + 'px',
-  lineHeight: menuHeight + 'px',
-  border: 'none',
-  outline: 'none'
-}
-
-const menuTitleStyle = {
-  border: '1px solid ' + Palette.gray
-}
-
-// https://blog.logrocket.com/building-a-custom-dropdown-menu-component-for-react-e94f02ced4a1
-// https://stackoverflow.com/questions/7855590/preventing-scroll-bars-from-being-hidden-for-macos-trackpad-users-in-webkit-blin
-export default class Dropdown<T> extends React.PureComponent<DropdownProps<T>, DropdownState> {
-
-  private topContainerRef: React.RefObject<HTMLDivElement>
-  private scrollContainerRef: React.RefObject<HTMLDivElement>
-
-  constructor(props: DropdownProps<T>) {
-    super(props)
-
-    this.state = {
-      menuIsVisible: false
-    }
-
-    this.topContainerRef = createRef()
-    this.scrollContainerRef = createRef()
-  }
-
-  componentDidMount() {
-    document.addEventListener('mousedown', (event) => {
-      this.handleClickOutside(event)
-    })
-  }
-
-  componentWillUnmount() {
-    document.removeEventListener('mousedown', (event) => {
-      this.handleClickOutside(event)
-    })
-  }
-
-  handleClickOutside(event: any) {
-    if (this.topContainerRef.current && event.target) {
-      if (!this.topContainerRef.current.contains(event.target)) {
-        this.hideMenu()
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        event.target instanceof Node &&
+        !containerRef.current.contains(event.target)
+      ) {
+        setMenuIsVisible(false)
       }
     }
-  }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
-  render() {
-    let selectedOption: DropdownOption<T> | undefined
-    for (let option of this.props.options) {
-      if (option.id == this.props.selectedOptionId) {
-        selectedOption = option
-        break
-      }
+  const selectedOption = props.options.find(
+    (opt) => opt.id === props.selectedOptionId
+  )
+
+  const renderBadge = (option: DropdownOption<T>) => {
+    if (!option.circleColor) return null
+    if (option.strokeCircle) {
+      return (
+        <span
+          className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ border: `1.5px solid ${option.circleColor}` }}
+        />
+      )
     }
     return (
-      <div ref={this.topContainerRef} style={{ ...menuContainerStyle, ...menuTitleStyle }}>
-        {selectedOption !== undefined ? this.renderOption(selectedOption, -1, () => { this.toggleMenu() }) : null}
-        {this.renderMenu()}
-      </div>
+      <span
+        className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+        style={{ backgroundColor: option.circleColor }}
+      />
     )
   }
 
-  private renderMenu() {
-    let scrollContainerStyle: any = {
-      border: '1px solid ' + Palette.gray,
-      maxHeight: '133px',
-      overflowX: 'hidden',
-      overflowY: 'scroll',
-      position: 'absolute',
-      width: '100%',
-      left: -1,
-      top: 0
-    }
-    if (!this.state.menuIsVisible) {
-      scrollContainerStyle = {
-        ...scrollContainerStyle,
-        display: 'none'
-      }
-    }
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <button
+        type="button"
+        disabled={props.disabled}
+        onClick={() => {
+          if (!props.disabled) {
+            setMenuIsVisible((prev) => !prev)
+          }
+        }}
+        className={`flex items-center justify-between gap-2 w-full px-2.5 py-1.5 text-xs rounded-md border transition-colors ${
+          props.disabled
+            ? 'bg-[#121417]/60 border-slate-800/70 text-slate-500 cursor-not-allowed'
+            : 'bg-[#121417] border-slate-700/80 text-slate-200 hover:border-slate-600 focus-visible:outline-none focus-visible:border-sky-500'
+        }`}
+      >
+        <span className="flex items-center gap-2 truncate">
+          {selectedOption && renderBadge(selectedOption)}
+          <span className="truncate">
+            {selectedOption ? selectedOption.title : 'Select...'}
+          </span>
+        </span>
+        <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+      </button>
 
-    return (
-      <div style={{ position: 'relative', width: '100%' }}>
-        <div ref={this.scrollContainerRef} style={scrollContainerStyle}>
-          {this.props.options.map((option: DropdownOption<T>, index: number) => {
-            return this.renderOption(option, index, () => { this.onOptionSelected(option.value) })
+      {menuIsVisible && !props.disabled && (
+        <div className="absolute left-0 right-0 mt-1 max-h-52 overflow-y-auto rounded-md bg-[#181b20] border border-slate-700 shadow-2xl z-50 py-1">
+          {props.options.map((option, index) => {
+            const isSelected = option.id === props.selectedOptionId
+            return (
+              <button
+                type="button"
+                key={option.id || index}
+                onClick={() => {
+                  props.onOptionSelected(option.value)
+                  setMenuIsVisible(false)
+                }}
+                className={`flex items-center gap-2 w-full px-2.5 py-1.5 text-left text-xs transition-colors ${
+                  isSelected
+                    ? 'bg-sky-500/20 text-sky-200 font-medium'
+                    : 'text-slate-300 hover:bg-slate-800/90 hover:text-white'
+                }`}
+              >
+                {renderBadge(option)}
+                <span className="truncate">{option.title}</span>
+              </button>
+            )
           })}
         </div>
-      </div>
-    )
-  }
-
-  private renderOption(option: DropdownOption<T>, index: number, clickHandler: () => void) {
-    let markerStyle = {
-      //
-    }
-    if (option.circleColor) {
-      if (option.strokeCircle) {
-        markerStyle = {
-          ...markerStyle,
-          ...strokedCircleStyle,
-          border: '1px solid ' + option.circleColor
-        }
-      } else {
-        markerStyle = {
-          ...markerStyle,
-          ...filledCircleStyle,
-          backgroundColor: option.circleColor
-        }
-      }
-    } else {
-      markerStyle = {
-        display: 'none'
-      }
-    }
-
-    let titleStyle: any = {
-      display: 'inline-block'
-    }
-
-    if (this.props.disabled) {
-      titleStyle = {
-        ...titleStyle,
-        color: Palette.disabledTextColor
-      }
-    }
-
-    return (
-      <button style={ { ...menuCellStyle, display: 'flex', alignItems: 'center' }} key={index} onClick={(_) => clickHandler()}>
-        <div style={{ ...circleStyle, ...markerStyle }} />
-        <div style={{ ...titleStyle, flexGrow: '100' }}>{option.title}</div>
-        <svg style={{ display: 'inline-block', width: 12, height: 5 }}>
-          <polyline points={'0,0, 3,3, 6,0'} stroke={ index < 0 ? (this.props.disabled ? Palette.disabledTextColor : Palette.black) : 'none' } fill={ 'none' } />
-        </svg>
-      </button>
-    )
-  }
-
-  private onOptionSelected(value: T) {
-    this.props.onOptionSelected(value)
-    this.hideMenu()
-  }
-
-  private hideMenu() {
-    this.setState(
-      {
-        ...this.state,
-        menuIsVisible: false
-      }
-    )
-
-    if (this.scrollContainerRef.current) {
-      this.scrollContainerRef.current.scrollTop = 0
-    }
-  }
-
-  private showMenu() {
-    if (this.props.disabled) {
-      return
-    }
-
-    this.setState(
-      {
-        ...this.state,
-        menuIsVisible: true
-      }
-    )
-
-    // flash scrollers (for macos with touchpad)
-    setTimeout(() => {
-      if (this.scrollContainerRef.current) {
-        this.scrollContainerRef.current.scrollTop = 1
-        this.scrollContainerRef.current.scrollTop = 0
-      }
-    },
-      200)
-  }
-
-  private toggleMenu() {
-    if (this.state.menuIsVisible) {
-      this.hideMenu()
-    } else {
-      this.showMenu()
-    }
-  }
+      )}
+    </div>
+  )
 }
+

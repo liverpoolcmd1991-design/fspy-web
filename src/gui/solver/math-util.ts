@@ -95,6 +95,83 @@ export default class MathUtil {
     }
   }
 
+  /**
+   * Computes the optimal vanishing point intersection of 2 or more line segments.
+   * - For exactly 2 segments, uses exact closed-form lineIntersection.
+   * - For 3+ segments, uses length-weighted least-squares normal equations
+   *   minimizing perpendicular distance to all segments.
+   */
+  static leastSquaresLineIntersection(lines: [Point2D, Point2D][]): Point2D | null {
+    if (lines.length < 2) {
+      return null
+    }
+    if (lines.length === 2) {
+      return this.lineIntersection(lines[0], lines[1])
+    }
+
+    const epsilon = 1e-10
+    let sAA = 0
+    let sAB = 0
+    let sBB = 0
+    let sAC = 0
+    let sBC = 0
+    let validLines = 0
+
+    for (let i = 0; i < lines.length; i++) {
+      const p1 = lines[i][0]
+      const p2 = lines[i][1]
+      const dx = p2.x - p1.x
+      const dy = p2.y - p1.y
+      const len = Math.sqrt(dx * dx + dy * dy)
+      if (len < 1e-7) {
+        continue
+      }
+      // Unit normal to line: (a, b) = (-dy/len, dx/len), c = -(a*x1 + b*y1)
+      const a = -dy / len
+      const b = dx / len
+      const c = -(a * p1.x + b * p1.y)
+      // Weight by segment length so longer user-drawn lines have higher confidence
+      const w = Math.max(0.05, len)
+
+      sAA += w * a * a
+      sAB += w * a * b
+      sBB += w * b * b
+      sAC += w * a * c
+      sBC += w * b * c
+      validLines++
+    }
+
+    if (validLines < 2) {
+      return null
+    }
+
+    const det = sAA * sBB - sAB * sAB
+    if (Math.abs(det) < epsilon) {
+      return null
+    }
+
+    return {
+      x: (-sBB * sAC + sAB * sBC) / det,
+      y: (sAB * sAC - sAA * sBC) / det
+    }
+  }
+
+  /**
+   * Computes the angular residual error (in degrees) between a line segment [p1, p2]
+   * and the ray connecting the segment's midpoint to the solved vanishing point.
+   */
+  static lineSegmentAngleErrorDegrees(segment: [Point2D, Point2D], vanishingPoint: Point2D): number {
+    const len = this.distance(segment[0], segment[1])
+    if (len < 1e-8) return 0
+    const segDir = this.normalized(this.difference(segment[1], segment[0]))
+    const mid = this.lineSegmentMidpoint(segment)
+    const toVpLen = this.distance(mid, vanishingPoint)
+    if (toVpLen < 1e-8) return 0
+    const vpDir = this.normalized(this.difference(vanishingPoint, mid))
+    const absDot = Math.min(1, Math.max(0, Math.abs(this.dot(segDir, vpDir))))
+    return (Math.acos(absDot) * 180) / Math.PI
+  }
+
   static triangleOrthoCenter(k: Point2D, l: Point2D, m: Point2D): Point2D {
     let a = k.x
     let b = k.y

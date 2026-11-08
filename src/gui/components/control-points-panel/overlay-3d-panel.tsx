@@ -16,18 +16,18 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as React from 'react'
-import Vector3D from '../../solver/vector-3d'
+import AABB from '../../solver/aabb'
+import AABBOps from '../../solver/aabb-ops'
+import CoordinatesUtil, {
+  ImageCoordinateFrame,
+} from '../../solver/coordinates-util'
+import MathUtil from '../../solver/math-util'
 import Point2D from '../../solver/point-2d'
-import CoordinatesUtil, { ImageCoordinateFrame } from '../../solver/coordinates-util'
+import { CameraParameters } from '../../solver/solver-result'
+import Vector3D from '../../solver/vector-3d'
 import { Palette } from '../../style/palette'
 import { Axis } from '../../types/calibration-settings'
 import { GlobalSettings, Overlay3DGuide } from '../../types/global-settings'
-import { CameraParameters } from '../../solver/solver-result'
-import MathUtil from '../../solver/math-util'
-import { Group, Line } from 'react-konva'
-import AABB from '../../solver/aabb'
-import AABBOps from '../../solver/aabb-ops'
 import { axisGlyph } from './glyph-paths'
 
 interface GridLineProps {
@@ -36,19 +36,29 @@ interface GridLineProps {
 }
 
 function GridPolyline(props: GridLineProps) {
-  let coords: number[] = []
-  for (let point of props.points) {
-    coords.push(point.x)
-    coords.push(point.y)
+  const pairs = props.points.map((p) => `${p.x},${p.y}`).join(' ')
+
+  if (props.isClosed) {
+    return (
+      <polygon
+        points={pairs}
+        fill="none"
+        stroke={Palette.lightGray}
+        strokeWidth={0.9}
+        opacity={0.55}
+        className="pointer-events-none"
+      />
+    )
   }
 
   return (
-    <Line
-      closed={props.isClosed}
-      points={coords}
+    <polyline
+      points={pairs}
+      fill="none"
       stroke={Palette.lightGray}
-      strokeWidth={0.7}
-      opacity={0.5}
+      strokeWidth={0.9}
+      opacity={0.55}
+      className="pointer-events-none"
     />
   )
 }
@@ -58,90 +68,104 @@ interface Overlay3DPanelProps {
   height: number
   imageAABB: AABB
   cameraParameters: CameraParameters
-  globalSettings: GlobalSettings,
+  globalSettings: GlobalSettings
   referenceDistanceAxis: Axis | null
 }
 
-export default class Overlay3DPanel extends React.PureComponent<Overlay3DPanelProps> {
-  render() {
-    return (
-      <Group>
-        {this.render3DGuide(this.props.globalSettings.overlay3DGuide)}
-        {this.renderAxes()}
-      </Group>
+export default function Overlay3DPanel(props: Overlay3DPanelProps) {
+  const getNormalizationFactor = (): number => {
+    const viewTransform = props.cameraParameters.viewTransform
+    const fov = props.cameraParameters.horizontalFieldOfView
+    const translation = new Vector3D(
+      viewTransform.matrix[0][3],
+      viewTransform.matrix[1][3],
+      viewTransform.matrix[2][3]
     )
+    const l = translation.length
+    const s = Math.atan(0.5 * fov)
+    return l * s
   }
 
-  private render3DGuide(overlay3DGuide: Overlay3DGuide) {
-    switch (overlay3DGuide) {
-      case Overlay3DGuide.Box:
-        return this.renderBox()
-      case Overlay3DGuide.XYGridFloor:
-        return this.renderGridFloor(Axis.PositiveZ)
-      case Overlay3DGuide.YZGridFloor:
-        return this.renderGridFloor(Axis.PositiveX)
-      case Overlay3DGuide.ZXGridFloor:
-        return this.renderGridFloor(Axis.PositiveY)
+  const project = (point: Vector3D): Point2D => {
+    const viewTransform = props.cameraParameters.viewTransform
+    const principalPoint = props.cameraParameters.principalPoint
+    const imageWidth = AABBOps.width(props.imageAABB)
+    const imageHeight = AABBOps.height(props.imageAABB)
+    const horizontalFieldOfView = props.cameraParameters.horizontalFieldOfView
+
+    const relativePosition = CoordinatesUtil.convert(
+      MathUtil.perspectiveProject(
+        point,
+        viewTransform,
+        principalPoint,
+        horizontalFieldOfView
+      ),
+      ImageCoordinateFrame.ImagePlane,
+      ImageCoordinateFrame.Relative,
+      imageWidth,
+      imageHeight
+    )
+
+    return {
+      x:
+        props.imageAABB.xMin +
+        relativePosition.x * AABBOps.width(props.imageAABB),
+      y:
+        props.imageAABB.yMin +
+        relativePosition.y * AABBOps.height(props.imageAABB),
     }
-
-    return null
   }
 
-  private renderBox() {
-    let size = 0.3 * this.normalizationFactor
+  const renderBox = () => {
+    const size = 0.3 * getNormalizationFactor()
 
-    let zMinFace: Vector3D[] = [
+    const zMinFace: Vector3D[] = [
       new Vector3D(-1, -1, -1),
       new Vector3D(1, -1, -1),
       new Vector3D(1, 1, -1),
-      new Vector3D(-1, 1, -1)
+      new Vector3D(-1, 1, -1),
     ]
 
-    let zMaxFace: Vector3D[] = [
+    const zMaxFace: Vector3D[] = [
       new Vector3D(-1, -1, 1),
       new Vector3D(1, -1, 1),
       new Vector3D(1, 1, 1),
-      new Vector3D(-1, 1, 1)
+      new Vector3D(-1, 1, 1),
     ]
 
-    let edges: Vector3D[][] = [
+    const edges: Vector3D[][] = [
       [new Vector3D(-1, -1, -1), new Vector3D(-1, -1, 1)],
       [new Vector3D(1, -1, -1), new Vector3D(1, -1, 1)],
       [new Vector3D(1, 1, -1), new Vector3D(1, 1, 1)],
-      [new Vector3D(-1, 1, -1), new Vector3D(-1, 1, 1)]
+      [new Vector3D(-1, 1, -1), new Vector3D(-1, 1, 1)],
     ]
 
-    let projectedFaces: Point2D[][] = []
-    for (let face of [zMinFace, zMaxFace]) {
-      let projected = face.map((vector: Vector3D) => this.project(vector.multipliedByScalar(size)))
-      projectedFaces.push(projected)
-    }
+    const projectedFaces = [zMinFace, zMaxFace].map((face) =>
+      face.map((vector: Vector3D) => project(vector.multipliedByScalar(size)))
+    )
 
-    let projectedEdges: Point2D[][] = []
-    for (let edge of edges) {
-      projectedEdges.push(
-        edge.map((vector: Vector3D) => this.project(vector.multipliedByScalar(size)))
-      )
-    }
+    const projectedEdges = edges.map((edge) =>
+      edge.map((vector: Vector3D) => project(vector.multipliedByScalar(size)))
+    )
 
     return (
-      <Group>
+      <g className="pointer-events-none">
         <GridPolyline points={projectedFaces[0]} isClosed={true} />
         <GridPolyline points={projectedFaces[1]} isClosed={true} />
         <GridPolyline points={projectedEdges[0]} />
         <GridPolyline points={projectedEdges[1]} />
         <GridPolyline points={projectedEdges[2]} />
         <GridPolyline points={projectedEdges[3]} />
-      </Group>
+      </g>
     )
   }
 
-  private renderGridFloor(normalAxis: Axis) {
-    let cellCount = 10
-    let cellSize = 0.15 * this.normalizationFactor
-    let gridLines3D: [Vector3D, Vector3D][] = []
-    let min = -0.5 * cellCount * cellSize
-    let max = min + cellCount * cellSize
+  const renderGridFloor = (normalAxis: Axis) => {
+    const cellCount = 10
+    const cellSize = 0.15 * getNormalizationFactor()
+    const gridLines3D: [Vector3D, Vector3D][] = []
+    const min = -0.5 * cellCount * cellSize
+    const max = min + cellCount * cellSize
 
     function gridPoint(u: number, v: number): Vector3D {
       switch (normalAxis) {
@@ -159,84 +183,50 @@ export default class Overlay3DPanel extends React.PureComponent<Overlay3DPanelPr
     }
 
     for (let i = 0; i <= cellCount; i++) {
-      let linePosition = min + i * cellSize
-      gridLines3D.push(
-        [
-          gridPoint(min, linePosition),
-          gridPoint(max, linePosition)
-        ]
-      )
-      gridLines3D.push(
-        [
-          gridPoint(linePosition, min),
-          gridPoint(linePosition, max)
-        ]
-      )
+      const linePosition = min + i * cellSize
+      gridLines3D.push([gridPoint(min, linePosition), gridPoint(max, linePosition)])
+      gridLines3D.push([gridPoint(linePosition, min), gridPoint(linePosition, max)])
     }
 
-    let gridLines2D: [Point2D, Point2D][] = []
-    for (let gridLine3D of gridLines3D) {
-      gridLines2D.push([
-        this.project(gridLine3D[0]),
-        this.project(gridLine3D[1])
-      ])
-    }
+    const gridLines2D: [Point2D, Point2D][] = gridLines3D.map((gridLine3D) => [
+      project(gridLine3D[0]),
+      project(gridLine3D[1]),
+    ])
 
     return (
-      <Group>
-        {gridLines2D.map((endpoints: [Point2D, Point2D], index: number) => {
-          return (<GridPolyline
-            key={index}
-            points={endpoints}
-          />)
-        })}
-      </Group>
+      <g className="pointer-events-none">
+        {gridLines2D.map((endpoints, index) => (
+          <GridPolyline key={index} points={endpoints} />
+        ))}
+      </g>
     )
   }
 
-  private get normalizationFactor(): number {
-    const viewTransform = this.props.cameraParameters.viewTransform
-    let fov = this.props.cameraParameters.horizontalFieldOfView
-    let translation = new Vector3D(viewTransform.matrix[0][3], viewTransform.matrix[1][3], viewTransform.matrix[2][3])
-    let l = translation.length
-    let s = Math.atan(0.5 * fov)
-    return l * s
+  const render3DGuide = (overlay3DGuide: Overlay3DGuide) => {
+    switch (overlay3DGuide) {
+      case Overlay3DGuide.Box:
+        return renderBox()
+      case Overlay3DGuide.XYGridFloor:
+        return renderGridFloor(Axis.PositiveZ)
+      case Overlay3DGuide.YZGridFloor:
+        return renderGridFloor(Axis.PositiveX)
+      case Overlay3DGuide.ZXGridFloor:
+        return renderGridFloor(Axis.PositiveY)
+      default:
+        return null
+    }
   }
 
-  private renderAxes() {
-    // Compute a scale factor so the axes have the same length
-    // regardless of camera translation and field of view
-    let axisLength = 0.3 * this.normalizationFactor
-
-    return (
-      <Group>
-        {this.renderAxis(
-          Axis.PositiveX,
-          axisLength,
-          Palette.red,
-          this.props.referenceDistanceAxis == Axis.PositiveX || this.props.referenceDistanceAxis == Axis.NegativeX
-        )}
-        {this.renderAxis(
-          Axis.PositiveY,
-          axisLength,
-          Palette.green,
-          this.props.referenceDistanceAxis == Axis.PositiveY || this.props.referenceDistanceAxis == Axis.NegativeY
-        )}
-        {this.renderAxis(
-          Axis.PositiveZ,
-          axisLength,
-          Palette.blue,
-          this.props.referenceDistanceAxis == Axis.PositiveZ || this.props.referenceDistanceAxis == Axis.NegativeZ
-        )}
-      </Group>
-    )
-  }
-
-  private renderAxis(axis: Axis, axisLength: number, color: string, arrowAndLabelOnly: boolean) {
-    let arrowSize = 0.12 * axisLength
-    let projectedOrigin = this.project(new Vector3D())
-    let endpoint = new Vector3D()
-    let axisNormal = new Vector3D()
+  const renderAxis = (
+    axis: Axis,
+    axisLength: number,
+    color: string,
+    arrowAndLabelOnly: boolean
+  ) => {
+    const arrowSize = 0.12 * axisLength
+    const projectedOrigin = project(new Vector3D())
+    const endpoint = new Vector3D()
+    const axisNormal = new Vector3D()
     switch (axis) {
       case Axis.PositiveX:
         endpoint.x = axisLength
@@ -251,20 +241,19 @@ export default class Overlay3DPanel extends React.PureComponent<Overlay3DPanelPr
         axisNormal.y = 1
         break
       default:
-        // Negative axis. Shouldn't end up here
-        return undefined
+        return null
     }
 
-    let axisDirection = endpoint.normalized()
-    let arrowWidth = 0.7
-    let arrowWedgeStart = this.project(
+    const axisDirection = endpoint.normalized()
+    const arrowWidth = 0.7
+    const arrowWedgeStart = project(
       new Vector3D(
         endpoint.x + arrowSize * (arrowWidth * axisNormal.x - axisDirection.x),
         endpoint.y + arrowSize * (arrowWidth * axisNormal.y - axisDirection.y),
         endpoint.z + arrowSize * (arrowWidth * axisNormal.z - axisDirection.z)
       )
     )
-    let arrowWedgeEnd = this.project(
+    const arrowWedgeEnd = project(
       new Vector3D(
         endpoint.x + arrowSize * (-arrowWidth * axisNormal.x - axisDirection.x),
         endpoint.y + arrowSize * (-arrowWidth * axisNormal.y - axisDirection.y),
@@ -272,48 +261,56 @@ export default class Overlay3DPanel extends React.PureComponent<Overlay3DPanelPr
       )
     )
 
-    let projectedEndpoint = this.project(endpoint)
-    let labelPosition = this.project(endpoint.multipliedByScalar(1.1))
+    const projectedEndpoint = project(endpoint)
+    const labelPosition = project(endpoint.multipliedByScalar(1.1))
     return (
-      <Group>
-        {arrowAndLabelOnly ? null : (<Line
-          strokeWidth={1}
-          points={[projectedOrigin.x, projectedOrigin.y, projectedEndpoint.x, projectedEndpoint.y]}
-          stroke={color}
-        />)}
-        <Line
-          strokeWidth={1}
-          points={[arrowWedgeStart.x, arrowWedgeStart.y, projectedEndpoint.x, projectedEndpoint.y, arrowWedgeEnd.x, arrowWedgeEnd.y]}
+      <g className="pointer-events-none">
+        {!arrowAndLabelOnly && (
+          <polyline
+            fill="none"
+            strokeWidth={1.6}
+            points={`${projectedOrigin.x},${projectedOrigin.y} ${projectedEndpoint.x},${projectedEndpoint.y}`}
+            stroke={color}
+          />
+        )}
+        <polyline
+          fill="none"
+          strokeWidth={1.6}
+          points={`${arrowWedgeStart.x},${arrowWedgeStart.y} ${projectedEndpoint.x},${projectedEndpoint.y} ${arrowWedgeEnd.x},${arrowWedgeEnd.y}`}
           stroke={color}
         />
-        {axisGlyph(axis, labelPosition, 8)}
-      </Group>
+        {axisGlyph(axis, labelPosition, 8.5)}
+      </g>
     )
   }
 
-  private project(point: Vector3D): Point2D {
-    let viewTransform = this.props.cameraParameters.viewTransform
-    let principalPoint = this.props.cameraParameters.principalPoint
-    let imageWidth = AABBOps.width(this.props.imageAABB)
-    let imageHeight = AABBOps.height(this.props.imageAABB)
-    let horizontalFieldOfView = this.props.cameraParameters.horizontalFieldOfView
+  const axisLength = 0.3 * getNormalizationFactor()
 
-    let relativePosition = CoordinatesUtil.convert(
-      MathUtil.perspectiveProject(
-        point,
-        viewTransform,
-        principalPoint,
-        horizontalFieldOfView
-      ),
-      ImageCoordinateFrame.ImagePlane,
-      ImageCoordinateFrame.Relative,
-      imageWidth,
-      imageHeight
-    )
-
-    return {
-      x: this.props.imageAABB.xMin + relativePosition.x * AABBOps.width(this.props.imageAABB),
-      y: this.props.imageAABB.yMin + relativePosition.y * AABBOps.height(this.props.imageAABB)
-    }
-  }
+  return (
+    <g className="pointer-events-none">
+      {render3DGuide(props.globalSettings.overlay3DGuide)}
+      {renderAxis(
+        Axis.PositiveX,
+        axisLength,
+        Palette.red,
+        props.referenceDistanceAxis === Axis.PositiveX ||
+          props.referenceDistanceAxis === Axis.NegativeX
+      )}
+      {renderAxis(
+        Axis.PositiveY,
+        axisLength,
+        Palette.green,
+        props.referenceDistanceAxis === Axis.PositiveY ||
+          props.referenceDistanceAxis === Axis.NegativeY
+      )}
+      {renderAxis(
+        Axis.PositiveZ,
+        axisLength,
+        Palette.blue,
+        props.referenceDistanceAxis === Axis.PositiveZ ||
+          props.referenceDistanceAxis === Axis.NegativeZ
+      )}
+    </g>
+  )
 }
+

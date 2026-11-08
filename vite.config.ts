@@ -1,3 +1,4 @@
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
@@ -8,15 +9,17 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          konva: ['react-konva'],
-          react: ['react', 'react-dom'],
+          three: ['three'],
+          react: ['react', 'react-dom', 'zustand'],
         },
       },
     },
   },
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   publicDir: 'assets/electron',
   server: {
-    open: true,
+    port: 3000,
+    host: '0.0.0.0',
   },
 })
+
