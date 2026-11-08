@@ -29,7 +29,7 @@ export default function ExportHubModal() {
   const state = useFSpyStore()
 
   const [selectedFormat, setSelectedFormat] =
-    useState<DCCExportFormat>('blender-py')
+    useState<DCCExportFormat>('blender-addon-52')
   const [copied, setCopied] = useState(false)
   const [renderingPng, setRenderingPng] = useState(false)
   const [exportingGlb, setExportingGlb] = useState(false)

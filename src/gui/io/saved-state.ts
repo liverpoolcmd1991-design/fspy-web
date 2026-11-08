@@ -21,6 +21,8 @@ import { CalibrationSettingsBase, CalibrationSettings1VP, CalibrationSettings2VP
 import { ControlPointsStateBase, ControlPointsState1VP, ControlPointsState2VP } from '../types/control-points-state'
 import { CameraParameters } from '../solver/solver-result'
 import { ResultDisplaySettings } from '../types/result-display-settings'
+import { SceneBlockoutConfig } from '../solver/scene-reconstruction'
+import { SunShadowConfig } from '../store/use-fspy-store'
 
 export default interface SavedState {
   globalSettings: GlobalSettings
@@ -35,4 +37,8 @@ export default interface SavedState {
 
   cameraParameters: CameraParameters | null
   resultDisplaySettings: ResultDisplaySettings
+
+  // Optional fSpy Studio extensions (100% backward-compatible with original .fspy v1 readers)
+  sceneBlockout?: SceneBlockoutConfig
+  sunShadowConfig?: SunShadowConfig
 }

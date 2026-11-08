@@ -5,6 +5,7 @@
  */
 
 import { saveAs } from 'file-saver'
+import { BLENDER_52_FSPY_ADDON_SOURCE } from './blender-addon-source'
 import { cameraPresets } from '../solver/camera-presets'
 import CoordinatesUtil, { ImageCoordinateFrame } from '../solver/coordinates-util'
 import MathUtil from '../solver/math-util'
@@ -14,6 +15,7 @@ import { CalibrationMode } from '../types/global-settings'
 import { Palette } from '../style/palette'
 
 export type DCCExportFormat =
+  | 'blender-addon-52'
   | 'blender-py'
   | 'unreal-py'
   | 'maya-py'
@@ -32,8 +34,15 @@ export interface DCCExportDescriptor {
 
 export const DCC_EXPORT_FORMATS: DCCExportDescriptor[] = [
   {
+    id: 'blender-addon-52',
+    title: 'Blender 5.2+ .fspy Importer Add-on (.py)',
+    subtitle: 'Installable Blender 5.2+ Add-on: adds File > Import > fSpy Project (.fspy) with Background Image & 3D options',
+    extension: 'py',
+    mimeType: 'text/x-python;charset=utf-8'
+  },
+  {
     id: 'blender-py',
-    title: 'Blender (Python .py)',
+    title: 'Blender Direct Scene Script (.py)',
     subtitle: 'Creates calibrated Blender camera with sensor, FOV, shift & matrix_world',
     extension: 'py',
     mimeType: 'text/x-python;charset=utf-8'
@@ -103,6 +112,10 @@ function resolveSensorAndFocal(state: FSpyStoreState) {
 }
 
 export function generateDCCExportCode(state: FSpyStoreState, format: DCCExportFormat): string {
+  if (format === 'blender-addon-52') {
+    return BLENDER_52_FSPY_ADDON_SOURCE
+  }
+
   if (!state.solverResult.cameraParameters) {
     return '// Camera parameters are not currently solved.'
   }
@@ -401,6 +414,11 @@ export function downloadDCCExport(state: FSpyStoreState, format: DCCExportFormat
   const descriptor = DCC_EXPORT_FORMATS.find((d) => d.id === format)
   if (!descriptor) return
   const code = generateDCCExportCode(state, format)
+  if (format === 'blender-addon-52') {
+    const blob = new Blob([code], { type: descriptor.mimeType })
+    saveAs(blob, 'fspy_studio_blender_addon.py')
+    return
+  }
   const { safeName } = resolveSensorAndFocal(state)
   const blob = new Blob([code], { type: descriptor.mimeType })
   saveAs(blob, `${safeName}_${format}.${descriptor.extension}`)

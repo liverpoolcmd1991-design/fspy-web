@@ -47,6 +47,8 @@ export default class ProjectFile {
       controlPointsState2VP: storeState.controlPointsState2VP,
       cameraParameters: storeState.solverResult.cameraParameters,
       resultDisplaySettings: storeState.resultDisplaySettings,
+      sceneBlockout: storeState.sceneBlockout,
+      sunShadowConfig: storeState.sunShadowConfig
     }
   }
 
