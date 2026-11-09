@@ -558,18 +558,23 @@ export default class Solver {
    * @param horizonDir The desired horizon direction
    */
   private static computeSecondVanishingPoint(Fu: Point2D, f: number, P: Point2D, horizonDir: Point2D): Point2D | null {
-    // find the second vanishing point
-    // TODO_ take principal point into account here
-    if (MathUtil.distance(Fu, P) < 1e-7) { // TODO: espsilon constant
-      return null
-    }
-
+    // In 1VP mode (especially central hallways where the primary vanishing point Fu is near the principal point P),
+    // the second orthogonal vanishing point lies at infinity along the horizon line.
+    // Instead of failing with null or dividing by zero, place Fv at a large finite orthogonal distance along horizonDir.
     let Fup = {
       x: Fu.x - P.x,
       y: Fu.y - P.y
     }
 
-    let k = -(Fup.x * Fup.x + Fup.y * Fup.y + f * f) / (Fup.x * horizonDir.x + Fup.y * horizonDir.y)
+    let denom = Fup.x * horizonDir.x + Fup.y * horizonDir.y
+    let k: number
+    if (MathUtil.distance(Fu, P) < 1e-5 || Math.abs(denom) < 1e-5) {
+      k = -(Fup.x * Fup.x + Fup.y * Fup.y + f * f) / (denom >= 0 ? 1e-5 : -1e-5)
+    } else {
+      k = -(Fup.x * Fup.x + Fup.y * Fup.y + f * f) / denom
+    }
+    const maxK = 1e5 * Math.max(1, f)
+    k = Math.max(-maxK, Math.min(maxK, k))
     let Fv = {
       x: Fup.x + k * horizonDir.x + P.x,
       y: Fup.y + k * horizonDir.y + P.y
@@ -730,7 +735,7 @@ export default class Solver {
 
       // Scale the translation vector by the ratio of the reference distance to the computed distance
       let referenceDistance = settings.referenceDistance
-      let scale = referenceDistance / defaultHandleDistance
+      let scale = defaultHandleDistance > 1e-6 ? referenceDistance / defaultHandleDistance : 1
       origin3D.multiplyByScalar(scale)
     }
 
@@ -756,8 +761,15 @@ export default class Solver {
     vertical: boolean
   ): number {
     let aspectRatio = imageWidth / imageHeight
-    let d = vertical ? 1 / aspectRatio : 1
-    return 2 * Math.atan(d / fRelative)
+    // CoordinatesUtil normalizes landscape images (aspect >= 1) to [-1, 1] x [-1/aspect, 1/aspect]
+    // and portrait images (aspect < 1) to [-aspect, aspect] x [-1, 1].
+    let halfSpan: number
+    if (aspectRatio >= 1) {
+      halfSpan = vertical ? 1 / aspectRatio : 1
+    } else {
+      halfSpan = vertical ? 1 : aspectRatio
+    }
+    return 2 * Math.atan(halfSpan / Math.max(1e-6, fRelative))
   }
 
   private static computeCameraParameters(

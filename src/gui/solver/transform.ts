@@ -235,7 +235,11 @@ export default class Transform {
     let m32 = m[3][2]
     let m33 = m[3][3]
 
-    let s = 1 / this.determinant
+    let det = this.determinant
+    if (Math.abs(det) < 1e-12) {
+      return
+    }
+    let s = 1 / det
 
     this.rows[0][0] = m12 * m23 * m31 - m13 * m22 * m31 + m13 * m21 * m32 - m11 * m23 * m32 - m12 * m21 * m33 + m11 * m22 * m33
     this.rows[0][1] = m03 * m22 * m31 - m02 * m23 * m31 - m03 * m21 * m32 + m01 * m23 * m32 + m02 * m21 * m33 - m01 * m22 * m33
@@ -293,9 +297,10 @@ export default class Transform {
     vector.z = result[2]
 
     if (perspectiveDivide) {
-      vector.x /= result[3]
-      vector.y /= result[3]
-      vector.z /= result[3]
+      let w = Math.abs(result[3]) < 1e-8 ? (result[3] >= 0 ? 1e-8 : -1e-8) : result[3]
+      vector.x /= w
+      vector.y /= w
+      vector.z /= w
     }
 
     if (targetRect) {

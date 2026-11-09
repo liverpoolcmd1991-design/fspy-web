@@ -110,50 +110,82 @@ export default class MathUtil {
     }
 
     const epsilon = 1e-10
-    let sAA = 0
-    let sAB = 0
-    let sBB = 0
-    let sAC = 0
-    let sBC = 0
-    let validLines = 0
+    const solveWeighted = (irlsWeights?: number[]): Point2D | null => {
+      let sAA = 0
+      let sAB = 0
+      let sBB = 0
+      let sAC = 0
+      let sBC = 0
+      let validLines = 0
 
+      for (let i = 0; i < lines.length; i++) {
+        const p1 = lines[i][0]
+        const p2 = lines[i][1]
+        const dx = p2.x - p1.x
+        const dy = p2.y - p1.y
+        const len = Math.sqrt(dx * dx + dy * dy)
+        if (len < 1e-7) {
+          continue
+        }
+        // Unit normal to line: (a, b) = (-dy/len, dx/len), c = -(a*x1 + b*y1)
+        const a = -dy / len
+        const b = dx / len
+        const c = -(a * p1.x + b * p1.y)
+        // Weight by segment length and optional Huber IRLS robust weight
+        const w = Math.max(0.05, len) * (irlsWeights ? irlsWeights[i] : 1)
+
+        sAA += w * a * a
+        sAB += w * a * b
+        sBB += w * b * b
+        sAC += w * a * c
+        sBC += w * b * c
+        validLines++
+      }
+
+      if (validLines < 2) {
+        return null
+      }
+
+      const det = sAA * sBB - sAB * sAB
+      if (Math.abs(det) < epsilon) {
+        return null
+      }
+
+      return {
+        x: (-sBB * sAC + sAB * sBC) / det,
+        y: (sAB * sAC - sAA * sBC) / det
+      }
+    }
+
+    const pass1 = solveWeighted()
+    if (!pass1 || !Number.isFinite(pass1.x) || !Number.isFinite(pass1.y)) {
+      return pass1
+    }
+
+    // 2nd Pass: Huber Iteratively Reweighted Least Squares (IRLS) to down-weight outlier lines when 3+ lines are used
+    const residuals: number[] = []
     for (let i = 0; i < lines.length; i++) {
       const p1 = lines[i][0]
       const p2 = lines[i][1]
       const dx = p2.x - p1.x
       const dy = p2.y - p1.y
-      const len = Math.sqrt(dx * dx + dy * dy)
+      const len = Math.hypot(dx, dy)
       if (len < 1e-7) {
+        residuals.push(0)
         continue
       }
-      // Unit normal to line: (a, b) = (-dy/len, dx/len), c = -(a*x1 + b*y1)
-      const a = -dy / len
-      const b = dx / len
-      const c = -(a * p1.x + b * p1.y)
-      // Weight by segment length so longer user-drawn lines have higher confidence
-      const w = Math.max(0.05, len)
-
-      sAA += w * a * a
-      sAB += w * a * b
-      sBB += w * b * b
-      sAC += w * a * c
-      sBC += w * b * c
-      validLines++
+      const perpDist = Math.abs(-dy * (pass1.x - p1.x) + dx * (pass1.y - p1.y)) / len
+      residuals.push(perpDist)
     }
 
-    if (validLines < 2) {
-      return null
-    }
+    const sortedRes = [...residuals].sort((a, b) => a - b)
+    const medianRes = sortedRes[Math.floor(sortedRes.length / 2)] || 1e-4
+    const huberDelta = Math.max(1e-4, 1.4826 * medianRes * 1.5)
+    const irlsWeights = residuals.map((r) =>
+      r <= huberDelta ? 1 : Math.sqrt(huberDelta / r)
+    )
 
-    const det = sAA * sBB - sAB * sAB
-    if (Math.abs(det) < epsilon) {
-      return null
-    }
-
-    return {
-      x: (-sBB * sAC + sAB * sBC) / det,
-      y: (sAB * sAC - sAA * sBC) / det
-    }
+    return solveWeighted(irlsWeights) ?? pass1
   }
 
   /**
@@ -181,6 +213,12 @@ export default class MathUtil {
     let f = m.y
 
     let N = b * c + d * e + f * a - c * f - b * e - a * d
+    if (Math.abs(N) < 1e-9) {
+      return {
+        x: (a + c + e) / 3,
+        y: (b + d + f) / 3
+      }
+    }
     let x = ((d - f) * b * b + (f - b) * d * d + (b - d) * f * f + a * b * (c - e) + c * d * (e - a) + e * f * (a - c)) / N
     let y = ((e - c) * a * a + (a - e) * c * c + (c - a) * e * e + a * b * (f - d) + c * d * (b - f) + e * f * (d - b)) / N
 
@@ -204,7 +242,14 @@ export default class MathUtil {
 
     // the vertex c can be expressed as p + hn, where n is orthogonal to ab.
     let n = { x: aToB.y, y: -aToB.x }
-    let h = this.dot(this.difference(a, p), this.difference(o, b)) / (this.dot(n, this.difference(o, b)))
+    let denom = this.dot(n, this.difference(o, b))
+    if (Math.abs(denom) < 1e-9) {
+      return {
+        x: p.x + n.x * 100,
+        y: p.y + n.y * 100
+      }
+    }
+    let h = this.dot(this.difference(a, p), this.difference(o, b)) / denom
 
     return {
       x: p.x + h * n.x,
@@ -219,8 +264,12 @@ export default class MathUtil {
     let p01 = p1.subtracted(p0)
     let p02 = p2.subtracted(p0)
     let lab = lb.subtracted(la)
-    let numerator = (p01.cross(p02)).dot(la.subtracted(p0))
-    let denominator = -(lab.dot(p01.cross(p02)))
+    let cross = p01.cross(p02)
+    let numerator = cross.dot(la.subtracted(p0))
+    let denominator = -(lab.dot(cross))
+    if (Math.abs(denominator) < 1e-9) {
+      return new Vector3D(NaN, NaN, NaN)
+    }
     let t = numerator / denominator
     return new Vector3D(
       la.x + t * lab.x,
@@ -230,7 +279,6 @@ export default class MathUtil {
   }
 
   static shortestLineSegmentBetweenLines(p1: Vector3D, p2: Vector3D, p3: Vector3D, p4: Vector3D): [Vector3D, Vector3D] {
-    // TODO: gracefully handle parallel lines
     // http://paulbourke.net/geometry/pointlineplane/
 
     function d(m: number, n: number, o: number, p: number): number {
@@ -243,10 +291,14 @@ export default class MathUtil {
       return (pm.x - pn.x) * (po.x - pp.x) + (pm.y - pn.y) * (po.y - pp.y) + (pm.z - pn.z) * (po.z - pp.z)
     }
 
-    let muaNumerator = d(1, 3, 4, 3) * d(4, 3, 2, 1) - d(1, 3, 2, 1) * d(4, 3, 4, 3)
-    let muaDenominator = d(2, 1, 2, 1) * d(4, 3, 4, 3) - d(4, 3, 2, 1) * d(4, 3, 2, 1)
+    let d4343 = d(4, 3, 4, 3)
+    let muaNumerator = d(1, 3, 4, 3) * d(4, 3, 2, 1) - d(1, 3, 2, 1) * d4343
+    let muaDenominator = d(2, 1, 2, 1) * d4343 - d(4, 3, 2, 1) * d(4, 3, 2, 1)
+    if (Math.abs(d4343) < 1e-9 || Math.abs(muaDenominator) < 1e-9) {
+      return [p1.copy(), p3.copy()]
+    }
     let mua = muaNumerator / muaDenominator
-    let mub = (d(1, 3, 4, 3) + mua * d(4, 3, 2, 1)) / d(4, 3, 4, 3)
+    let mub = (d(1, 3, 4, 3) + mua * d(4, 3, 2, 1)) / d4343
 
     return [
       new Vector3D(
@@ -321,27 +373,19 @@ export default class MathUtil {
   }
 
   static matrixToAxisAngle(transform: Transform): [number, number, number, number] {
-    // http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToAngle/
-    const m00 = transform.matrix[0][0]
-    const m01 = transform.matrix[0][1]
-    const m02 = transform.matrix[0][2]
-    const m10 = transform.matrix[1][0]
-    const m11 = transform.matrix[1][1]
-    const m12 = transform.matrix[1][2]
-    const m20 = transform.matrix[2][0]
-    const m21 = transform.matrix[2][1]
-    const m22 = transform.matrix[2][2]
+    const [qx, qy, qz, qw] = this.matrixToQuaternion(transform)
+    const clampedW = Math.max(-1, Math.min(1, qw))
+    const angle = 2 * Math.acos(clampedW)
+    const sinHalf = Math.sqrt(Math.max(0, 1 - clampedW * clampedW))
 
-    const x = (m21 - m12) / Math.sqrt((m21 - m12) * (m21 - m12) + (m02 - m20) * (m02 - m20) + (m10 - m01) * (m10 - m01))
-    const y = (m02 - m20) / Math.sqrt((m21 - m12) * (m21 - m12) + (m02 - m20) * (m02 - m20) + (m10 - m01) * (m10 - m01))
-    const z = (m10 - m01) / Math.sqrt((m21 - m12) * (m21 - m12) + (m02 - m20) * (m02 - m20) + (m10 - m01) * (m10 - m01))
-    const angle = Math.acos((m00 + m11 + m22 - 1) / 2)
-
-    return [x, y, z, angle]
+    if (sinHalf < 1e-6) {
+      return [1, 0, 0, angle]
+    }
+    return [qx / sinHalf, qy / sinHalf, qz / sinHalf, angle]
   }
 
   static matrixToQuaternion(transform: Transform): [number, number, number, number] {
-    // http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
+    // Shepperd's 4-branch numerically stable rotation matrix to quaternion extraction
     const m00 = transform.matrix[0][0]
     const m01 = transform.matrix[0][1]
     const m02 = transform.matrix[0][2]
@@ -352,10 +396,45 @@ export default class MathUtil {
     const m21 = transform.matrix[2][1]
     const m22 = transform.matrix[2][2]
 
-    const qw = Math.sqrt(1 + m00 + m11 + m22) / 2
-    const qx = (m21 - m12) / (4 * qw)
-    const qy = (m02 - m20) / (4 * qw)
-    const qz = (m10 - m01) / (4 * qw)
+    const trace = m00 + m11 + m22
+    let qw: number
+    let qx: number
+    let qy: number
+    let qz: number
+
+    if (trace > 0) {
+      const s = 0.5 / Math.sqrt(trace + 1.0)
+      qw = 0.25 / s
+      qx = (m21 - m12) * s
+      qy = (m02 - m20) * s
+      qz = (m10 - m01) * s
+    } else if (m00 > m11 && m00 > m22) {
+      const s = 2.0 * Math.sqrt(Math.max(0, 1.0 + m00 - m11 - m22))
+      qw = (m21 - m12) / s
+      qx = 0.25 * s
+      qy = (m01 + m10) / s
+      qz = (m02 + m20) / s
+    } else if (m11 > m22) {
+      const s = 2.0 * Math.sqrt(Math.max(0, 1.0 + m11 - m00 - m22))
+      qw = (m02 - m20) / s
+      qx = (m01 + m10) / s
+      qy = 0.25 * s
+      qz = (m12 + m21) / s
+    } else {
+      const s = 2.0 * Math.sqrt(Math.max(0, 1.0 + m22 - m00 - m11))
+      qw = (m10 - m01) / s
+      qx = (m02 + m20) / s
+      qy = (m12 + m21) / s
+      qz = 0.25 * s
+    }
+
+    const len = Math.hypot(qx, qy, qz, qw)
+    if (len > 1e-9) {
+      qx /= len
+      qy /= len
+      qz /= len
+      qw /= len
+    }
     return [qx, qy, qz, qw]
   }
 

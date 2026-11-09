@@ -2344,6 +2344,59 @@ export default function SettingsPanel() {
                             {selectedSweptRail.bracketCount}
                           </span>
                         </div>
+
+                        {/* Upgrade #4: Parallel Multi-Rail / Multi-Conduit Repeat Array */}
+                        <div className='pt-1.5 mt-1 border-t border-rose-500/20 space-y-1.5'>
+                          <div className='flex items-center justify-between text-[10.5px]'>
+                            <span className='font-semibold text-rose-200'>
+                              Parallel Rail / Conduit Array
+                            </span>
+                            <span className='font-mono text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-200'>
+                              {selectedSweptRail.repeatCount ?? 1}×
+                            </span>
+                          </div>
+                          <div className='flex items-center gap-2 text-[11px]'>
+                            <span className='w-16 text-zinc-400'>Copies</span>
+                            <input
+                              type='range'
+                              min={1}
+                              max={8}
+                              step={1}
+                              value={selectedSweptRail.repeatCount ?? 1}
+                              onChange={(e) =>
+                                updateSweptWallRail(selectedSweptRail.id, {
+                                  repeatCount: parseInt(e.target.value, 10)
+                                })
+                              }
+                            />
+                            <span className='w-10 text-right font-mono tabular-nums text-rose-300'>
+                              {selectedSweptRail.repeatCount ?? 1}×
+                            </span>
+                          </div>
+                          {(selectedSweptRail.repeatCount ?? 1) > 1 && (
+                            <div className='flex items-center gap-2 text-[11px]'>
+                              <span className='w-16 text-zinc-400'>Spacing</span>
+                              <input
+                                type='range'
+                                min={-1.5}
+                                max={1.5}
+                                step={0.05}
+                                value={selectedSweptRail.repeatSpacing ?? 0.35}
+                                onChange={(e) =>
+                                  updateSweptWallRail(selectedSweptRail.id, {
+                                    repeatSpacing: parseFloat(e.target.value)
+                                  })
+                                }
+                              />
+                              <span className='w-10 text-right font-mono tabular-nums text-rose-300'>
+                                {(
+                                  selectedSweptRail.repeatSpacing ?? 0.35
+                                ).toFixed(2)}
+                                m
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                 </div>
@@ -2797,6 +2850,65 @@ export default function SettingsPanel() {
                             </div>
                           )}
                         </div>
+
+                        {/* Upgrade #4: Clone Along Vanishing Line (Repeating Hallway Doors / Windows / Arches) */}
+                        <div className='pt-1.5 mt-1 border-t border-cyan-500/20 space-y-1.5'>
+                          <div className='flex items-center justify-between text-[10.5px]'>
+                            <span className='font-semibold text-cyan-200'>
+                              Clone Along Wall (Hallway Array)
+                            </span>
+                            <span className='font-mono text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-200'>
+                              {selectedWallRelief.repeatCount ?? 1}×
+                            </span>
+                          </div>
+                          <div className='flex items-center gap-2 text-[11px]'>
+                            <span className='w-16 text-zinc-400'>Copies</span>
+                            <input
+                              type='range'
+                              min={1}
+                              max={8}
+                              step={1}
+                              value={selectedWallRelief.repeatCount ?? 1}
+                              onChange={(e) =>
+                                updateWallReliefExtrusion(
+                                  selectedWallRelief.id,
+                                  {
+                                    repeatCount: parseInt(e.target.value, 10)
+                                  }
+                                )
+                              }
+                            />
+                            <span className='w-12 text-right font-mono tabular-nums text-cyan-300'>
+                              {selectedWallRelief.repeatCount ?? 1}×
+                            </span>
+                          </div>
+                          {(selectedWallRelief.repeatCount ?? 1) > 1 && (
+                            <div className='flex items-center gap-2 text-[11px]'>
+                              <span className='w-16 text-zinc-400'>Spacing</span>
+                              <input
+                                type='range'
+                                min={-4}
+                                max={4}
+                                step={0.1}
+                                value={selectedWallRelief.repeatSpacing ?? 1.8}
+                                onChange={(e) =>
+                                  updateWallReliefExtrusion(
+                                    selectedWallRelief.id,
+                                    {
+                                      repeatSpacing: parseFloat(e.target.value)
+                                    }
+                                  )
+                                }
+                              />
+                              <span className='w-12 text-right font-mono tabular-nums text-cyan-300'>
+                                {(
+                                  selectedWallRelief.repeatSpacing ?? 1.8
+                                ).toFixed(1)}
+                                m
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                 </div>
@@ -2910,6 +3022,94 @@ export default function SettingsPanel() {
                             </div>
                           )
                         })()}
+
+                        {/* Upgrade #4: Clone Along Vanishing Line (Colonnade Pillar Array) */}
+                        <div className='pt-1.5 mt-1 border-t border-yellow-500/20 space-y-1.5'>
+                          <div className='flex items-center justify-between text-[10.5px]'>
+                            <span className='font-semibold text-yellow-200'>
+                              Colonnade Repeat Array
+                            </span>
+                            <span className='font-mono text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-200'>
+                              {selectedSweptColumn.repeatCount ?? 1}×
+                            </span>
+                          </div>
+                          <div className='flex items-center gap-2 text-[11px]'>
+                            <span className='w-14 text-zinc-400'>Pillars</span>
+                            <input
+                              type='range'
+                              min={1}
+                              max={10}
+                              step={1}
+                              value={selectedSweptColumn.repeatCount ?? 1}
+                              onChange={(e) =>
+                                updateSweptCylinderColumn(
+                                  selectedSweptColumn.id,
+                                  {
+                                    repeatCount: parseInt(e.target.value, 10)
+                                  }
+                                )
+                              }
+                            />
+                            <span className='w-10 text-right font-mono tabular-nums text-yellow-300'>
+                              {selectedSweptColumn.repeatCount ?? 1}×
+                            </span>
+                          </div>
+                          {(selectedSweptColumn.repeatCount ?? 1) > 1 && (
+                            <>
+                              <div className='flex items-center gap-2 text-[11px]'>
+                                <span className='w-14 text-zinc-400'>Spacing</span>
+                                <input
+                                  type='range'
+                                  min={-4}
+                                  max={4}
+                                  step={0.1}
+                                  value={selectedSweptColumn.repeatSpacing ?? 2.0}
+                                  onChange={(e) =>
+                                    updateSweptCylinderColumn(
+                                      selectedSweptColumn.id,
+                                      {
+                                        repeatSpacing: parseFloat(e.target.value)
+                                      }
+                                    )
+                                  }
+                                />
+                                <span className='w-10 text-right font-mono tabular-nums text-yellow-300'>
+                                  {(
+                                    selectedSweptColumn.repeatSpacing ?? 2.0
+                                  ).toFixed(1)}
+                                  m
+                                </span>
+                              </div>
+                              <div className='flex items-center justify-between text-[10.5px]'>
+                                <span className='text-zinc-400'>Hallway Axis</span>
+                                <div className='flex items-center gap-1'>
+                                  {(['y', 'x'] as const).map((ax) => (
+                                    <button
+                                      key={ax}
+                                      type='button'
+                                      onClick={() =>
+                                        updateSweptCylinderColumn(
+                                          selectedSweptColumn.id,
+                                          {
+                                            repeatAxis: ax
+                                          }
+                                        )
+                                      }
+                                      className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase cursor-pointer ${
+                                        (selectedSweptColumn.repeatAxis ?? 'y') ===
+                                        ax
+                                          ? 'bg-yellow-500 text-zinc-950 font-bold'
+                                          : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-zinc-200'
+                                      }`}
+                                    >
+                                      {ax === 'y' ? 'Y Depth' : 'X Width'}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     )}
                 </div>

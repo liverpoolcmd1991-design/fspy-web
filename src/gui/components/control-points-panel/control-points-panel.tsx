@@ -37,6 +37,7 @@ import MathUtil from '../../solver/math-util'
 import Point2D from '../../solver/point-2d'
 import {
   computeProjectedBlockoutVolumeHandles,
+  computeRepeatedCloneWireframesSVG,
   estimateQuadPhysicalAspect,
   projectBlockoutPointToRelative,
   renderUnwarpedQuadTexture,
@@ -142,6 +143,7 @@ export default function ControlPointsPanel() {
   const worldRulerPoints = useFSpyStore((s) => s.worldRulerPoints)
 
   const sceneBlockout = useFSpyStore((s) => s.sceneBlockout)
+  const activeSceneTool = useFSpyStore((s) => s.activeSceneTool)
   const textureUnwarp = useFSpyStore((s) => s.textureUnwarp)
   const parallaxAnimator = useFSpyStore((s) => s.parallaxAnimator)
 
@@ -154,6 +156,8 @@ export default function ControlPointsPanel() {
   const setWorldRulerEnabled = useFSpyStore((s) => s.setWorldRulerEnabled)
   const setWorldRulerPoint = useFSpyStore((s) => s.setWorldRulerPoint)
   const setSceneBlockout = useFSpyStore((s) => s.setSceneBlockout)
+  const setActiveSidebarTab = useFSpyStore((s) => s.setActiveSidebarTab)
+  const setActiveSceneTool = useFSpyStore((s) => s.setActiveSceneTool)
   const addBlockoutVolume = useFSpyStore((s) => s.addBlockoutVolume)
   const updateBlockoutVolume = useFSpyStore((s) => s.updateBlockoutVolume)
   const setBillboardPolygonVertex = useFSpyStore(
@@ -162,6 +166,9 @@ export default function ControlPointsPanel() {
   const updateSweptWallRail = useFSpyStore((s) => s.updateSweptWallRail)
   const setSweptRailWaypoint = useFSpyStore((s) => s.setSweptRailWaypoint)
   const setWallCutoutCorner = useFSpyStore((s) => s.setWallCutoutCorner)
+  const updateWallReliefExtrusion = useFSpyStore(
+    (s) => s.updateWallReliefExtrusion
+  )
   const setWallReliefCorner = useFSpyStore((s) => s.setWallReliefCorner)
   const updateSweptCylinderColumn = useFSpyStore(
     (s) => s.updateSweptCylinderColumn
@@ -750,6 +757,8 @@ export default function ControlPointsPanel() {
                 onClick={(e) => {
                   e.stopPropagation()
                   setSceneBlockout({ selectedVolumeId: vol.id })
+                  setActiveSidebarTab('scene')
+                  setActiveSceneTool('boxes')
                 }}
               />
               <polygon
@@ -765,6 +774,8 @@ export default function ControlPointsPanel() {
                 onClick={(e) => {
                   e.stopPropagation()
                   setSceneBlockout({ selectedVolumeId: vol.id })
+                  setActiveSidebarTab('scene')
+                  setActiveSceneTool('boxes')
                 }}
               />
               {/* 4 Vertical Pillar Edges */}
@@ -1052,6 +1063,8 @@ export default function ControlPointsPanel() {
                 onClick={(e) => {
                   e.stopPropagation()
                   setSceneBlockout({ selectedBillboardId: bb.id })
+                  setActiveSidebarTab('scene')
+                  setActiveSceneTool('billboards')
                 }}
               />
 
@@ -1150,6 +1163,8 @@ export default function ControlPointsPanel() {
                   onClick={(e) => {
                     e.stopPropagation()
                     setSceneBlockout({ selectedSweptRailId: rail.id })
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool('rails')
                   }}
                 />
                 {isSel && (
@@ -1288,6 +1303,8 @@ export default function ControlPointsPanel() {
                   onClick={(e) => {
                     e.stopPropagation()
                     setSceneBlockout({ selectedWallCutoutId: wc.id })
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool('wall-cutouts')
                   }}
                 />
                 {isSel &&
@@ -1377,6 +1394,8 @@ export default function ControlPointsPanel() {
                   onClick={(e) => {
                     e.stopPropagation()
                     setSceneBlockout({ selectedWallReliefId: rel.id })
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool('reliefs')
                   }}
                 />
                 {isSel &&
@@ -1471,6 +1490,8 @@ export default function ControlPointsPanel() {
                   onClick={(e) => {
                     e.stopPropagation()
                     setSceneBlockout({ selectedSweptColumnId: col.id })
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool('columns')
                   }}
                 />
                 {/* Vertical Spine */}
@@ -1486,6 +1507,8 @@ export default function ControlPointsPanel() {
                   onClick={(e) => {
                     e.stopPropagation()
                     setSceneBlockout({ selectedSweptColumnId: col.id })
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool('columns')
                   }}
                 />
                 {isSel && (
@@ -1631,9 +1654,11 @@ export default function ControlPointsPanel() {
                   strokeWidth={isSel ? 2.5 : 1.5}
                   strokeDasharray='5 3'
                   className='cursor-pointer'
-                  onClick={() =>
+                  onClick={() => {
                     setSceneBlockout({ selectedStaircaseId: st.id })
-                  }
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool('stairs')
+                  }}
                 />
 
                 {isSel && sceneBlockout.showViewportHandles && (
@@ -1846,6 +1871,8 @@ export default function ControlPointsPanel() {
                   onClick={(e) => {
                     e.stopPropagation()
                     setSceneBlockout({ selectedFloorPrismId: prism.id })
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool('prisms')
                   }}
                 />
                 {isSel &&
@@ -1962,6 +1989,8 @@ export default function ControlPointsPanel() {
                   onClick={(e) => {
                     e.stopPropagation()
                     setSceneBlockout({ selectedLatheObjectId: lathe.id })
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool('lathe')
                   }}
                 />
                 <line
@@ -2115,6 +2144,8 @@ export default function ControlPointsPanel() {
                   onClick={(e) => {
                     e.stopPropagation()
                     setSceneBlockout({ selectedCofferedArrayId: arr.id })
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool('coffers')
                   }}
                 />
                 {gridLines.map((gl, gIdx) => (
@@ -2237,6 +2268,8 @@ export default function ControlPointsPanel() {
                   onClick={(ev) => {
                     ev.stopPropagation()
                     setSceneBlockout({ selectedCurvedWallId: cw.id })
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool('curved-walls')
                   }}
                 />
                 {isSel && (
@@ -2382,6 +2415,76 @@ export default function ControlPointsPanel() {
               </g>
             )
           })}
+      </g>
+    )
+  }
+
+  const renderRepeatedCloneWireframesOverlay = () => {
+    if (
+      !sceneBlockout.enabled ||
+      sceneBlockout.freeOrbitMode ||
+      parallaxAnimator.enabled ||
+      !solverResult.cameraParameters
+    ) {
+      return null
+    }
+
+    const clones = computeRepeatedCloneWireframesSVG(
+      sceneBlockout,
+      solverResult.cameraParameters
+    )
+    if (clones.length === 0) return null
+
+    return (
+      <g className='pointer-events-none select-none'>
+        {clones.map((clone) => {
+          const badgeAbs = rel2AbsPoint(clone.badgeAnchorRel)
+          return (
+            <g key={clone.id} opacity={0.82}>
+              {clone.polylinesRel.map((polyRel, pIdx) => {
+                const ptsStr = polyRel
+                  .map((pt) => {
+                    const abs = rel2AbsPoint(pt)
+                    return `${abs.x},${abs.y}`
+                  })
+                  .join(' ')
+                return (
+                  <polyline
+                    key={`${clone.id}-poly-${pIdx}`}
+                    points={ptsStr}
+                    fill='none'
+                    stroke={clone.color}
+                    strokeWidth={1.6}
+                    strokeDasharray='4 3'
+                  />
+                )
+              })}
+              <g transform={`translate(${badgeAbs.x}, ${badgeAbs.y - 10})`}>
+                <rect
+                  x={-42}
+                  y={-9}
+                  width={84}
+                  height={16}
+                  rx={4}
+                  fill='rgba(10, 14, 22, 0.88)'
+                  stroke={clone.color}
+                  strokeWidth={1}
+                />
+                <text
+                  x={0}
+                  y={2}
+                  textAnchor='middle'
+                  fill='#f8fafc'
+                  fontSize={8.5}
+                  fontFamily='JetBrains Mono, monospace'
+                  fontWeight={700}
+                >
+                  {clone.label}
+                </text>
+              </g>
+            </g>
+          )
+        })}
       </g>
     )
   }
@@ -3008,6 +3111,7 @@ export default function ControlPointsPanel() {
                 />
                 {renderReferenceDistanceControl()}
                 {renderWorldRulerOverlay()}
+                {renderRepeatedCloneWireframesOverlay()}
                 {renderBlockoutViewportHandles()}
                 {renderBillboardCutoutsOverlay()}
                 {renderHallwayWallDetailsOverlay()}
@@ -3185,12 +3289,188 @@ export default function ControlPointsPanel() {
                   <>
                     <span aria-hidden='true'>·</span>
                     <span className='text-sky-300 font-medium'>
-                      Drag Z↑ / W / D handles on 3D Box to Push/Pull
+                      Click any 3D handle to inspect · Drag Z↑ / W / D to Push/Pull
                     </span>
                   </>
                 )}
             </div>
           )}
+
+          {/* On-Canvas Context-Sensitive 3D Scene & Vanishing-Line Repeat Array Quick-Bar */}
+          {sceneBlockout.enabled &&
+            !isFreeOrbitActive &&
+            !parallaxAnimator.enabled && (
+              <div className='absolute top-3 right-3 z-30 flex items-center gap-2 bg-[#141821] border border-sky-500/40 px-3 py-1.5 rounded-lg shadow-xl text-xs text-slate-200'>
+                <span className='text-[11px] font-semibold text-sky-300'>
+                  3D Tool:
+                </span>
+                <select
+                  value={activeSceneTool}
+                  onChange={(e) => {
+                    setActiveSidebarTab('scene')
+                    setActiveSceneTool(e.target.value as typeof activeSceneTool)
+                  }}
+                  className='bg-[#0f131a] border border-slate-700/80 rounded px-2 py-0.5 text-[11px] text-slate-100 focus:outline-none focus:border-sky-400'
+                >
+                  <option value='room'>Room Shell</option>
+                  <option value='boxes'>3D Boxes</option>
+                  <option value='columns'>3-Sweep Pillars</option>
+                  <option value='reliefs'>Doors &amp; Portals</option>
+                  <option value='rails'>Pipes &amp; Cables</option>
+                  <option value='stairs'>Stairs &amp; Ramps</option>
+                  <option value='prisms'>Floor Prisms</option>
+                  <option value='lathe'>3D Lathe</option>
+                  <option value='coffers'>Coffer Grid</option>
+                  <option value='curved-walls'>Curved Wall</option>
+                  <option value='billboards'>2.5D Cutouts</option>
+                  <option value='wall-cutouts'>Wall Decals</option>
+                  <option value='ai-bridge'>Depth &amp; Normals</option>
+                </select>
+
+                {/* Direct On-Canvas Repeat Array Controls when Boxes, Pillars, Doors, or Rails are active */}
+                {activeSceneTool === 'boxes' &&
+                  (() => {
+                    const selVol =
+                      sceneBlockout.volumes.find(
+                        (v) => v.id === sceneBlockout.selectedVolumeId
+                      ) ?? sceneBlockout.volumes[0]
+                    if (!selVol) return null
+                    return (
+                      <div className='flex items-center gap-1.5 pl-2 border-l border-slate-700/80'>
+                        <span className='text-[10px] text-amber-300 font-medium'>
+                          Clone Array:
+                        </span>
+                        <input
+                          type='range'
+                          min={1}
+                          max={8}
+                          step={1}
+                          value={selVol.repeatCount ?? 1}
+                          onChange={(e) =>
+                            updateBlockoutVolume(selVol.id, {
+                              repeatCount: parseInt(e.target.value, 10)
+                            })
+                          }
+                          className='w-14 accent-amber-400 cursor-pointer'
+                          title='Clone selected 3D Box along vanishing line'
+                        />
+                        <span className='font-mono text-[10px] text-amber-200'>
+                          {selVol.repeatCount ?? 1}×
+                        </span>
+                      </div>
+                    )
+                  })()}
+
+                {activeSceneTool === 'columns' &&
+                  (() => {
+                    const selCol =
+                      sceneBlockout.sweptColumns.find(
+                        (c) => c.id === sceneBlockout.selectedSweptColumnId
+                      ) ?? sceneBlockout.sweptColumns[0]
+                    if (!selCol) return null
+                    return (
+                      <div className='flex items-center gap-1.5 pl-2 border-l border-slate-700/80'>
+                        <span className='text-[10px] text-amber-300 font-medium'>
+                          Colonnade:
+                        </span>
+                        <input
+                          type='range'
+                          min={1}
+                          max={10}
+                          step={1}
+                          value={selCol.repeatCount ?? 1}
+                          onChange={(e) =>
+                            updateSweptCylinderColumn(selCol.id, {
+                              repeatCount: parseInt(e.target.value, 10)
+                            })
+                          }
+                          className='w-14 accent-amber-400 cursor-pointer'
+                          title='Clone selected 3-Sweep Pillar along colonnade vanishing line'
+                        />
+                        <span className='font-mono text-[10px] text-amber-200'>
+                          {selCol.repeatCount ?? 1}×
+                        </span>
+                      </div>
+                    )
+                  })()}
+
+                {activeSceneTool === 'reliefs' &&
+                  (() => {
+                    const selRel =
+                      sceneBlockout.wallReliefs.find(
+                        (r) => r.id === sceneBlockout.selectedWallReliefId
+                      ) ?? sceneBlockout.wallReliefs[0]
+                    if (!selRel) return null
+                    return (
+                      <div className='flex items-center gap-1.5 pl-2 border-l border-slate-700/80'>
+                        <span className='text-[10px] text-cyan-300 font-medium'>
+                          Repeat Doors:
+                        </span>
+                        <input
+                          type='range'
+                          min={1}
+                          max={8}
+                          step={1}
+                          value={selRel.repeatCount ?? 1}
+                          onChange={(e) =>
+                            updateWallReliefExtrusion(selRel.id, {
+                              repeatCount: parseInt(e.target.value, 10)
+                            })
+                          }
+                          className='w-14 accent-cyan-400 cursor-pointer'
+                          title='Clone selected Door/Portal along hallway wall'
+                        />
+                        <span className='font-mono text-[10px] text-cyan-200'>
+                          {selRel.repeatCount ?? 1}×
+                        </span>
+                      </div>
+                    )
+                  })()}
+
+                {activeSceneTool === 'rails' &&
+                  (() => {
+                    const selRail =
+                      sceneBlockout.sweptRails.find(
+                        (r) => r.id === sceneBlockout.selectedSweptRailId
+                      ) ?? sceneBlockout.sweptRails[0]
+                    if (!selRail) return null
+                    return (
+                      <div className='flex items-center gap-1.5 pl-2 border-l border-slate-700/80'>
+                        <span className='text-[10px] text-rose-300 font-medium'>
+                          Parallel Pipes:
+                        </span>
+                        <input
+                          type='range'
+                          min={1}
+                          max={8}
+                          step={1}
+                          value={selRail.repeatCount ?? 1}
+                          onChange={(e) =>
+                            updateSweptWallRail(selRail.id, {
+                              repeatCount: parseInt(e.target.value, 10)
+                            })
+                          }
+                          className='w-14 accent-rose-400 cursor-pointer'
+                          title='Clone parallel pipes/cables along axis'
+                        />
+                        <span className='font-mono text-[10px] text-rose-200'>
+                          {selRail.repeatCount ?? 1}×
+                        </span>
+                      </div>
+                    )
+                  })()}
+
+                <button
+                  type='button'
+                  onClick={() => setSceneBlockout({ freeOrbitMode: true })}
+                  className='ml-1 flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold transition-colors cursor-pointer'
+                  title='Detach camera and orbit freely around the reconstructed 3D scene'
+                >
+                  <Orbit className='w-3 h-3' />
+                  <span>3D Orbit</span>
+                </button>
+              </div>
+            )}
 
           {/* Collapsible Bottom Control Dock (Zero Viewport Occlusion) */}
           <div

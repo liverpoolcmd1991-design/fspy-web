@@ -14,6 +14,8 @@ import Vector3D from './vector-3d'
 
 export type RoomShellType = 'none' | 'corner-stage' | 'interior-room'
 
+export type RepeatAxis3D = 'x' | 'y' | 'z'
+
 export interface BlockoutVolume {
   id: string
   name: string
@@ -24,6 +26,10 @@ export interface BlockoutVolume {
   offsetY: number
   offsetZ: number
   rotationZ: number
+  /** Upgrade #4: Clone Along Vanishing Line (1-Click Repeating Hallway Array) */
+  repeatCount?: number
+  repeatSpacing?: number
+  repeatAxis?: RepeatAxis3D
 }
 
 export interface BillboardCutout {
@@ -73,6 +79,9 @@ export interface SweptWallRail {
   radius: number
   profile: SweptRailProfile
   bracketCount: number
+  /** Upgrade #4: Parallel multi-rail / multi-conduit repeat array */
+  repeatCount?: number
+  repeatSpacing?: number
 }
 
 export type WallCutoutAlphaMode =
@@ -119,6 +128,9 @@ export interface WallReliefExtrusion {
   annexLength?: number
   annexWidthExpand?: number
   annexOpenEnd?: boolean
+  /** Upgrade #4: Clone Along Vanishing Line (Repeating Hallway Doors / Windows / Arches) */
+  repeatCount?: number
+  repeatSpacing?: number
 }
 
 export type SweptColumnProfile =
@@ -138,6 +150,10 @@ export interface SweptCylinderColumn {
   topCenterRel: Point2D
   baseZ: number
   profile: SweptColumnProfile
+  /** Upgrade #4: Clone Along Vanishing Line (Repeating Colonnade Pillars) */
+  repeatCount?: number
+  repeatSpacing?: number
+  repeatAxis?: 'x' | 'y'
 }
 
 export type StaircaseMode =
@@ -1228,6 +1244,195 @@ export function computeProjectedBlockoutVolumeHandles(
   }
 }
 
+export interface ProjectedCloneWireframe {
+  id: string
+  label: string
+  color: string
+  polylinesRel: Point2D[][]
+  badgeAnchorRel: Point2D
+}
+
+/**
+ * Upgrade #4: Computes 2D perspective-projected ghost wireframes for all repeated array clones
+ * (`repeatCount > 1`) across 3D Boxes, 3-Sweep Pillars, Wall Reliefs/Doors, and Swept Rails
+ * so the user sees repeating elements marching down the hallway in real time on the 2D photo.
+ */
+export function computeRepeatedCloneWireframesSVG(
+  config: SceneBlockoutConfig,
+  cameraParameters: CameraParameters
+): ProjectedCloneWireframe[] {
+  const results: ProjectedCloneWireframe[] = []
+
+  // 1. Repeated 3D Boxes
+  for (const vol of config.volumes) {
+    const count = Math.max(1, Math.min(10, Math.round(vol.repeatCount ?? 1)))
+    const spacing = vol.repeatSpacing ?? 1.8
+    const axis = vol.repeatAxis ?? 'y'
+    if (count <= 1 || Math.abs(spacing) < 1e-3) continue
+
+    for (let k = 1; k < count; k++) {
+      const shift = k * spacing
+      const cloneVol: BlockoutVolume = {
+        ...vol,
+        offsetX: vol.offsetX + (axis === 'x' ? shift : 0),
+        offsetY: vol.offsetY + (axis === 'y' ? shift : 0),
+        offsetZ: vol.offsetZ + (axis === 'z' ? shift : 0)
+      }
+      const proj = computeProjectedBlockoutVolumeHandles(cloneVol, cameraParameters)
+      const b = proj.bottomCorners
+      const t = proj.topCorners
+      results.push({
+        id: `${vol.id}-clone-${k}`,
+        label: `${vol.name} #${k + 1}`,
+        color: '#38bdf8',
+        polylinesRel: [
+          [b[0], b[1], b[2], b[3], b[0]],
+          [t[0], t[1], t[2], t[3], t[0]],
+          [b[0], t[0]],
+          [b[1], t[1]],
+          [b[2], t[2]],
+          [b[3], t[3]]
+        ],
+        badgeAnchorRel: proj.roofCenter
+      })
+    }
+  }
+
+  // 2. Repeated 3-Sweep Pillars / Colonnades
+  if (config.sweptColumnsEnabled) {
+    for (const col of config.sweptColumns) {
+      const count = Math.max(1, Math.min(10, Math.round(col.repeatCount ?? 1)))
+      const spacing = col.repeatSpacing ?? 2.0
+      const axis = col.repeatAxis ?? 'y'
+      if (count <= 1 || Math.abs(spacing) < 1e-3) continue
+
+      const solved = solveSweptColumn3D(col, cameraParameters)
+      if (!solved) continue
+
+      for (let k = 1; k < count; k++) {
+        const cx = solved.centerX + (axis === 'x' ? k * spacing : 0)
+        const cy = solved.centerY + (axis === 'y' ? k * spacing : 0)
+        const r = solved.radius
+        const z0 = col.baseZ
+        const z1 = col.baseZ + solved.height
+        const ringBot: Point2D[] = []
+        const ringTop: Point2D[] = []
+        const segs = 12
+        for (let s = 0; s <= segs; s++) {
+          const ang = (s / segs) * Math.PI * 2
+          const px = cx + r * Math.cos(ang)
+          const py = cy + r * Math.sin(ang)
+          ringBot.push(projectBlockoutPointToRelative({ x: px, y: py, z: z0 }, cameraParameters))
+          ringTop.push(projectBlockoutPointToRelative({ x: px, y: py, z: z1 }, cameraParameters))
+        }
+        const topCenter = projectBlockoutPointToRelative({ x: cx, y: cy, z: z1 }, cameraParameters)
+        results.push({
+          id: `${col.id}-clone-${k}`,
+          label: `${col.name} #${k + 1}`,
+          color: '#facc15',
+          polylinesRel: [
+            ringBot,
+            ringTop,
+            [ringBot[0], ringTop[0]],
+            [ringBot[3], ringTop[3]],
+            [ringBot[6], ringTop[6]],
+            [ringBot[9], ringTop[9]]
+          ],
+          badgeAnchorRel: topCenter
+        })
+      }
+    }
+  }
+
+  // 3. Repeated Doors, Windows & Arched Portals along Host Wall
+  if (config.wallReliefsEnabled) {
+    for (const rel of config.wallReliefs) {
+      const count = Math.max(1, Math.min(10, Math.round(rel.repeatCount ?? 1)))
+      const spacing = rel.repeatSpacing ?? 1.8
+      if (count <= 1 || Math.abs(spacing) < 1e-3) continue
+
+      const hits = rel.quadRel.map((pt) =>
+        unprojectRelativePointToHostWall(pt, rel.hostWall, 0, config, cameraParameters)
+      )
+      if (hits.some((h) => !h)) continue
+      const [h0, h1, h2, h3] = hits as NonNullable<(typeof hits)[0]>[]
+      const dx = h2.x - h3.x
+      const dy = h2.y - h3.y
+      const dz = h2.z - h3.z
+      const len = Math.hypot(dx, dy, dz)
+      if (len < 1e-4) continue
+      const ux = dx / len
+      const uy = dy / len
+      const uz = dz / len
+
+      for (let k = 1; k < count; k++) {
+        const shift = k * spacing
+        const corners = [h0, h1, h2, h3].map((h) =>
+          projectBlockoutPointToRelative(
+            {
+              x: h.x + ux * shift,
+              y: h.y + uy * shift,
+              z: h.z + uz * shift
+            },
+            cameraParameters
+          )
+        )
+        results.push({
+          id: `${rel.id}-clone-${k}`,
+          label: `${rel.name} #${k + 1}`,
+          color: '#22d3ee',
+          polylinesRel: [[corners[0], corners[1], corners[2], corners[3], corners[0]]],
+          badgeAnchorRel: {
+            x: 0.5 * (corners[0].x + corners[1].x),
+            y: 0.5 * (corners[0].y + corners[1].y)
+          }
+        })
+      }
+    }
+  }
+
+  // 4. Repeated Parallel Swept Rails / Ceiling Conduits
+  if (config.sweptRailsEnabled) {
+    for (const rail of config.sweptRails) {
+      const count = Math.max(1, Math.min(10, Math.round(rail.repeatCount ?? 1)))
+      const spacing = rail.repeatSpacing ?? 0.35
+      if (count <= 1 || Math.abs(spacing) < 1e-3) continue
+
+      const allRelNodes = [rail.p1Rel, ...(rail.waypointsRel ?? []), rail.p2Rel]
+      const hits = allRelNodes
+        .map((pt) =>
+          unprojectRelativePointToHostWall(pt, rail.hostWall, rail.standOff, config, cameraParameters)
+        )
+        .filter((h): h is NonNullable<typeof h> => h !== null)
+      if (hits.length < 2) continue
+
+      const { axisV } = resolveHostWallPlaneBlockout(rail.hostWall, config)
+      for (let k = 1; k < count; k++) {
+        const shift = k * spacing
+        const poly = hits.map((h) =>
+          projectBlockoutPointToRelative(
+            {
+              x: h.x + axisV.x * shift,
+              y: h.y + axisV.y * shift,
+              z: h.z + axisV.z * shift
+            },
+            cameraParameters
+          )
+        )
+        results.push({
+          id: `${rail.id}-clone-${k}`,
+          label: `${rail.name} #${k + 1}`,
+          color: '#fb7185',
+          polylinesRel: [poly],
+          badgeAnchorRel: poly[0]
+        })
+      }
+    }
+  }
+
+  return results
+}
+
 /**
  * Evaluates a smooth 3D camera transform at normalized time phase01 in [0, 1]
  * for the Cinematic 2.5D Parallax Camera Animator.
@@ -1791,12 +1996,88 @@ function createOcclusionInpaintedBackgroundTexture(
  * with baked camera-projected UVs and optional Background Occlusion Inpainting.
  */
 export function buildReconstructedSceneGroup(
-  config: SceneBlockoutConfig,
+  rawConfig: SceneBlockoutConfig,
   cameraParameters: CameraParameters,
   photoTexture: THREE.Texture | null
 ): THREE.Group {
   const rootGroup = new THREE.Group()
   rootGroup.name = 'fSpy_Reconstructed_Scene'
+
+  // Upgrade #4: Expand any repeated 3D Boxes (`repeatCount > 1`) and Wall Reliefs/Portals (`repeatCount > 1`)
+  // into virtual instances so Room Shell portal hole-punching, baseboard doorway clipping, and 3D meshes all include repeated clones
+  const expandedVolumes: BlockoutVolume[] = []
+  for (const vol of rawConfig.volumes) {
+    expandedVolumes.push(vol)
+    const count = Math.max(1, Math.min(10, Math.round(vol.repeatCount ?? 1)))
+    const spacing = vol.repeatSpacing ?? 1.8
+    const axis = vol.repeatAxis ?? 'y'
+    if (count > 1 && Math.abs(spacing) >= 1e-3) {
+      for (let k = 1; k < count; k++) {
+        const shift = k * spacing
+        expandedVolumes.push({
+          ...vol,
+          id: `${vol.id}_clone_${k}`,
+          name: `${vol.name} Copy ${k + 1}`,
+          offsetX: vol.offsetX + (axis === 'x' ? shift : 0),
+          offsetY: vol.offsetY + (axis === 'y' ? shift : 0),
+          offsetZ: vol.offsetZ + (axis === 'z' ? shift : 0),
+          repeatCount: 1
+        })
+      }
+    }
+  }
+
+  const expandedWallReliefs: WallReliefExtrusion[] = []
+  if (rawConfig.wallReliefsEnabled) {
+    for (const rel of rawConfig.wallReliefs) {
+      expandedWallReliefs.push(rel)
+      const count = Math.max(1, Math.min(10, Math.round(rel.repeatCount ?? 1)))
+      const spacing = rel.repeatSpacing ?? 1.8
+      if (count > 1 && Math.abs(spacing) >= 1e-3) {
+        const hits = rel.quadRel.map((pt) =>
+          unprojectRelativePointToHostWall(pt, rel.hostWall, 0, rawConfig, cameraParameters)
+        )
+        if (!hits.some((h) => !h)) {
+          const [h0, h1, h2, h3] = hits as NonNullable<(typeof hits)[0]>[]
+          const dx = h2.x - h3.x
+          const dy = h2.y - h3.y
+          const dz = h2.z - h3.z
+          const len = Math.hypot(dx, dy, dz)
+          if (len > 1e-4) {
+            const ux = dx / len
+            const uy = dy / len
+            const uz = dz / len
+            for (let k = 1; k < count; k++) {
+              const shift = k * spacing
+              const shiftedQuad = [h0, h1, h2, h3].map((h) =>
+                projectBlockoutPointToRelative(
+                  {
+                    x: h.x + ux * shift,
+                    y: h.y + uy * shift,
+                    z: h.z + uz * shift
+                  },
+                  cameraParameters
+                )
+              ) as [Point2D, Point2D, Point2D, Point2D]
+              expandedWallReliefs.push({
+                ...rel,
+                id: `${rel.id}_clone_${k}`,
+                name: `${rel.name} Copy ${k + 1}`,
+                quadRel: shiftedQuad,
+                repeatCount: 1
+              })
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const config: SceneBlockoutConfig = {
+    ...rawConfig,
+    volumes: expandedVolumes,
+    wallReliefs: rawConfig.wallReliefsEnabled ? expandedWallReliefs : rawConfig.wallReliefs
+  }
 
   const baseScale = computeSceneBaseScale(cameraParameters)
   const sourceImageEl =
@@ -2869,143 +3150,159 @@ export function buildReconstructedSceneGroup(
         .filter((h): h is NonNullable<typeof h> => h !== null)
       if (hits.length < 2) return
 
-      const worldNodes = hits.map(
-        (h) =>
-          new THREE.Vector3(h.x * baseScale, h.y * baseScale, h.z * baseScale)
-      )
-      const pathMode = rail.pathMode ?? 'straight-or-elbows'
-      const rWorld = Math.max(0.008, rail.radius) * baseScale
-      const radialSegs =
-        rail.profile === 'square-bar'
-          ? 4
-          : rail.profile === 'molding-bevel'
-            ? 6
-            : 18
+      const { axisV } = resolveHostWallPlaneBlockout(rail.hostWall, config)
+      const shiftDir = new THREE.Vector3(axisV.x, axisV.y, axisV.z).normalize()
+      const repeatCount = Math.max(1, Math.min(10, Math.round(rail.repeatCount ?? 1)))
+      const repeatSpacing = rail.repeatSpacing ?? 0.35
 
-      // Build 3D curve samples according to pathMode (Straight/Elbows, Smooth Spline, or Gravity Catenary Sag)
-      let curve3D: THREE.Curve<THREE.Vector3>
-      if (pathMode === 'catenary-sag') {
-        const sagWorld = Math.max(0.02, rail.catenarySag ?? 0.22) * baseScale
-        const pStart = worldNodes[0]
-        const pEnd = worldNodes[worldNodes.length - 1]
-        const catPts: THREE.Vector3[] = []
-        const numSamples = 20
-        for (let i = 0; i <= numSamples; i++) {
-          const t = i / numSamples
-          const pt = pStart.clone().lerp(pEnd, t)
-          // Parabolic/cosh catenary sag downward along -Z
-          pt.z -= sagWorld * 4 * t * (1 - t)
-          catPts.push(pt)
+      for (let copyIdx = 0; copyIdx < repeatCount; copyIdx++) {
+        const copyOffset = shiftDir
+          .clone()
+          .multiplyScalar(copyIdx * repeatSpacing * baseScale)
+        const worldNodes = hits.map((h) =>
+          new THREE.Vector3(
+            h.x * baseScale,
+            h.y * baseScale,
+            h.z * baseScale
+          ).add(copyOffset)
+        )
+        const pathMode = rail.pathMode ?? 'straight-or-elbows'
+        const rWorld = Math.max(0.008, rail.radius) * baseScale
+        const radialSegs =
+          rail.profile === 'square-bar'
+            ? 4
+            : rail.profile === 'molding-bevel'
+              ? 6
+              : 18
+
+        // Build 3D curve samples according to pathMode (Straight/Elbows, Smooth Spline, or Gravity Catenary Sag)
+        let curve3D: THREE.Curve<THREE.Vector3>
+        if (pathMode === 'catenary-sag') {
+          const sagWorld = Math.max(0.02, rail.catenarySag ?? 0.22) * baseScale
+          const pStart = worldNodes[0]
+          const pEnd = worldNodes[worldNodes.length - 1]
+          const catPts: THREE.Vector3[] = []
+          const numSamples = 20
+          for (let i = 0; i <= numSamples; i++) {
+            const t = i / numSamples
+            const pt = pStart.clone().lerp(pEnd, t)
+            // Parabolic/cosh catenary sag downward along -Z
+            pt.z -= sagWorld * 4 * t * (1 - t)
+            catPts.push(pt)
+          }
+          curve3D = new THREE.CatmullRomCurve3(catPts)
+        } else if (pathMode === 'smooth-spline' && worldNodes.length >= 3) {
+          curve3D = new THREE.CatmullRomCurve3(worldNodes, false, 'centripetal')
+        } else if (worldNodes.length === 2) {
+          curve3D = new THREE.LineCurve3(worldNodes[0], worldNodes[1])
+        } else {
+          // Multi-segment polyline with filleted 90-degree pipe elbows at interior corners
+          const filletedPts: THREE.Vector3[] = [worldNodes[0]]
+          for (let i = 1; i < worldNodes.length - 1; i++) {
+            const prev = worldNodes[i - 1]
+            const curr = worldNodes[i]
+            const next = worldNodes[i + 1]
+            const dPrev = prev.distanceTo(curr)
+            const dNext = next.distanceTo(curr)
+            const filletDist = Math.min(rWorld * 2.5, dPrev * 0.28, dNext * 0.28)
+            if (filletDist > 1e-4) {
+              const pIn = curr
+                .clone()
+                .lerp(prev, filletDist / Math.max(1e-4, dPrev))
+              const pOut = curr
+                .clone()
+                .lerp(next, filletDist / Math.max(1e-4, dNext))
+              const pMid = pIn
+                .clone()
+                .add(pOut)
+                .multiplyScalar(0.5)
+                .lerp(curr, 0.45)
+              filletedPts.push(pIn, pMid, pOut)
+            } else {
+              filletedPts.push(curr)
+            }
+          }
+          filletedPts.push(worldNodes[worldNodes.length - 1])
+          curve3D = new THREE.CatmullRomCurve3(filletedPts, false, 'chordal', 0.15)
         }
-        curve3D = new THREE.CatmullRomCurve3(catPts)
-      } else if (pathMode === 'smooth-spline' && worldNodes.length >= 3) {
-        curve3D = new THREE.CatmullRomCurve3(worldNodes, false, 'centripetal')
-      } else if (worldNodes.length === 2) {
-        curve3D = new THREE.LineCurve3(worldNodes[0], worldNodes[1])
-      } else {
-        // Multi-segment polyline with filleted 90-degree pipe elbows at interior corners
-        const filletedPts: THREE.Vector3[] = [worldNodes[0]]
-        for (let i = 1; i < worldNodes.length - 1; i++) {
-          const prev = worldNodes[i - 1]
-          const curr = worldNodes[i]
-          const next = worldNodes[i + 1]
-          const dPrev = prev.distanceTo(curr)
-          const dNext = next.distanceTo(curr)
-          const filletDist = Math.min(rWorld * 2.5, dPrev * 0.28, dNext * 0.28)
-          if (filletDist > 1e-4) {
-            const pIn = curr
-              .clone()
-              .lerp(prev, filletDist / Math.max(1e-4, dPrev))
-            const pOut = curr
-              .clone()
-              .lerp(next, filletDist / Math.max(1e-4, dNext))
-            const pMid = pIn
-              .clone()
-              .add(pOut)
-              .multiplyScalar(0.5)
-              .lerp(curr, 0.45)
-            filletedPts.push(pIn, pMid, pOut)
-          } else {
-            filletedPts.push(curr)
+
+        const tubularSegs = Math.max(24, worldNodes.length * 18)
+        const tubeGeo = new THREE.TubeGeometry(
+          curve3D,
+          tubularSegs,
+          rWorld,
+          radialSegs,
+          false
+        )
+
+        const railGroup = new THREE.Group()
+        railGroup.name =
+          copyIdx === 0
+            ? rail.name.replace(/\s+/g, '_')
+            : `${rail.name.replace(/\s+/g, '_')}_Copy_${copyIdx + 1}`
+
+        const tubeMesh = new THREE.Mesh(tubeGeo, fgSurfaceMat)
+        tubeMesh.name = `${railGroup.name}_Sweep`
+        tubeMesh.castShadow = true
+        tubeMesh.receiveShadow = true
+        tubeMesh.updateMatrixWorld(true)
+
+        applyCameraProjectedUVsToGeometry(
+          tubeGeo,
+          tubeMesh.matrixWorld,
+          cameraParameters
+        )
+
+        if (config.wireframeOverlay) {
+          const isSel = rail.id === config.selectedSweptRailId
+          const wireCurvePts = curve3D.getPoints(32)
+          const wireLineGeo = new THREE.BufferGeometry().setFromPoints(
+            wireCurvePts
+          )
+          tubeMesh.add(
+            new THREE.Line(wireLineGeo, isSel ? selectedWireMat : railWireMat)
+          )
+        }
+        railGroup.add(tubeMesh)
+
+        // Optional 3D Wall Mount Brackets connecting the swept rail back to the host wall
+        const nVec = new THREE.Vector3(
+          hits[0].normal.x,
+          hits[0].normal.y,
+          hits[0].normal.z
+        ).normalize()
+        const standOffWorld = Math.max(0, rail.standOff) * baseScale
+        const bCount = Math.max(0, Math.min(8, Math.round(rail.bracketCount)))
+
+        if (bCount > 0 && standOffWorld > 1e-3) {
+          for (let bi = 0; bi < bCount; bi++) {
+            const t = bCount === 1 ? 0.5 : 0.08 + (0.84 * bi) / (bCount - 1)
+            const railPt = curve3D.getPoint(t)
+            const wallPt = railPt.clone().addScaledVector(nVec, -standOffWorld)
+            const bMid = railPt.clone().add(wallPt).multiplyScalar(0.5)
+            const bGeo = new THREE.CylinderGeometry(
+              rWorld * 0.55,
+              rWorld * 0.65,
+              standOffWorld,
+              8,
+              4
+            )
+            const bMesh = new THREE.Mesh(bGeo, fgSurfaceMat)
+            bMesh.name = `${railGroup.name}_Bracket_${bi + 1}`
+            bMesh.position.copy(bMid)
+            bMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), nVec)
+            bMesh.updateMatrixWorld(true)
+            applyCameraProjectedUVsToGeometry(
+              bGeo,
+              bMesh.matrixWorld,
+              cameraParameters
+            )
+            railGroup.add(bMesh)
           }
         }
-        filletedPts.push(worldNodes[worldNodes.length - 1])
-        curve3D = new THREE.CatmullRomCurve3(filletedPts, false, 'chordal', 0.15)
+
+        rootGroup.add(railGroup)
       }
-
-      const tubularSegs = Math.max(24, worldNodes.length * 18)
-      const tubeGeo = new THREE.TubeGeometry(
-        curve3D,
-        tubularSegs,
-        rWorld,
-        radialSegs,
-        false
-      )
-
-      const railGroup = new THREE.Group()
-      railGroup.name = rail.name.replace(/\s+/g, '_')
-
-      const tubeMesh = new THREE.Mesh(tubeGeo, fgSurfaceMat)
-      tubeMesh.name = `${railGroup.name}_Sweep`
-      tubeMesh.castShadow = true
-      tubeMesh.receiveShadow = true
-      tubeMesh.updateMatrixWorld(true)
-
-      applyCameraProjectedUVsToGeometry(
-        tubeGeo,
-        tubeMesh.matrixWorld,
-        cameraParameters
-      )
-
-      if (config.wireframeOverlay) {
-        const isSel = rail.id === config.selectedSweptRailId
-        const wireCurvePts = curve3D.getPoints(32)
-        const wireLineGeo = new THREE.BufferGeometry().setFromPoints(
-          wireCurvePts
-        )
-        tubeMesh.add(
-          new THREE.Line(wireLineGeo, isSel ? selectedWireMat : railWireMat)
-        )
-      }
-      railGroup.add(tubeMesh)
-
-      // Optional 3D Wall Mount Brackets connecting the swept rail back to the host wall
-      const nVec = new THREE.Vector3(
-        hits[0].normal.x,
-        hits[0].normal.y,
-        hits[0].normal.z
-      ).normalize()
-      const standOffWorld = Math.max(0, rail.standOff) * baseScale
-      const bCount = Math.max(0, Math.min(8, Math.round(rail.bracketCount)))
-
-      if (bCount > 0 && standOffWorld > 1e-3) {
-        for (let bi = 0; bi < bCount; bi++) {
-          const t = bCount === 1 ? 0.5 : 0.08 + (0.84 * bi) / (bCount - 1)
-          const railPt = curve3D.getPoint(t)
-          const wallPt = railPt.clone().addScaledVector(nVec, -standOffWorld)
-          const bMid = railPt.clone().add(wallPt).multiplyScalar(0.5)
-          const bGeo = new THREE.CylinderGeometry(
-            rWorld * 0.55,
-            rWorld * 0.65,
-            standOffWorld,
-            8,
-            4
-          )
-          const bMesh = new THREE.Mesh(bGeo, fgSurfaceMat)
-          bMesh.name = `${railGroup.name}_Bracket_${bi + 1}`
-          bMesh.position.copy(bMid)
-          bMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), nVec)
-          bMesh.updateMatrixWorld(true)
-          applyCameraProjectedUVsToGeometry(
-            bGeo,
-            bMesh.matrixWorld,
-            cameraParameters
-          )
-          railGroup.add(bMesh)
-        }
-      }
-
-      rootGroup.add(railGroup)
     })
   }
 
