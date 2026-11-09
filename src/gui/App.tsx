@@ -194,7 +194,28 @@ export default function App() {
     showToast('Exported reference image')
   }
 
-  // Global drag-and-drop, clipboard image paste, and studio keyboard shortcuts
+  const handlersRef = useRef({
+    handleFileBytes,
+    handleSaveProject,
+    undo,
+    redo,
+    snapshotSlotsEnabled,
+    captureSnapshotSlot,
+    restoreSnapshotSlot,
+    setSidePanelVisibility
+  })
+  handlersRef.current = {
+    handleFileBytes,
+    handleSaveProject,
+    undo,
+    redo,
+    snapshotSlotsEnabled,
+    captureSnapshotSlot,
+    restoreSnapshotSlot,
+    setSidePanelVisibility
+  }
+
+  // Global drag-and-drop, clipboard image paste, and studio keyboard shortcuts (registered once on mount)
   useEffect(() => {
     const onDragOver = (ev: DragEvent) => {
       ev.preventDefault()
@@ -204,7 +225,7 @@ export default function App() {
       const file = ev.dataTransfer?.files?.[0]
       if (file) {
         void file.arrayBuffer().then((ab) => {
-          void handleFileBytes(file.name, ab)
+          void handlersRef.current.handleFileBytes(file.name, ab)
         })
       }
     }
@@ -217,7 +238,10 @@ export default function App() {
           const file = item.getAsFile()
           if (file) {
             void file.arrayBuffer().then((ab) => {
-              void handleFileBytes(file.name || 'clipboard-image.png', ab)
+              void handlersRef.current.handleFileBytes(
+                file.name || 'clipboard-image.png',
+                ab
+              )
             })
             break
           }
@@ -227,24 +251,28 @@ export default function App() {
     const onKeyDown = (ev: KeyboardEvent) => {
       const target = ev.target as HTMLElement | null
       const isInput =
-        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT')
 
+      const h = handlersRef.current
       if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'z') {
         if (isInput) return
         ev.preventDefault()
         if (ev.shiftKey) {
-          redo()
+          h.redo()
         } else {
-          undo()
+          h.undo()
         }
       } else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'y') {
         if (isInput) return
         ev.preventDefault()
-        redo()
+        h.redo()
       } else if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 's') {
         ev.preventDefault()
-        handleSaveProject()
-      } else if (ev.altKey && !isInput && snapshotSlotsEnabled) {
+        h.handleSaveProject()
+      } else if (ev.altKey && !isInput && h.snapshotSlotsEnabled) {
         const slotMap: Record<string, 0 | 1 | 2 | 3> = {
           '1': 0,
           '2': 1,
@@ -255,16 +283,16 @@ export default function App() {
         if (slot !== undefined) {
           ev.preventDefault()
           if (ev.shiftKey) {
-            captureSnapshotSlot(slot)
+            h.captureSnapshotSlot(slot)
           } else {
-            restoreSnapshotSlot(slot)
+            h.restoreSnapshotSlot(slot)
           }
         }
       } else if (ev.key === 'Tab' && !isInput) {
         if (useFSpyStore.getState().image.url !== null) {
           ev.preventDefault()
           const current = useFSpyStore.getState().uiState.sidePanelsAreVisible
-          setSidePanelVisibility(!current)
+          h.setSidePanelVisibility(!current)
         }
       }
     }
@@ -279,7 +307,7 @@ export default function App() {
       window.removeEventListener('paste', onPaste)
       window.removeEventListener('keydown', onKeyDown)
     }
-  })
+  }, [])
 
   // Auto-dismiss toast notifications
   useEffect(() => {

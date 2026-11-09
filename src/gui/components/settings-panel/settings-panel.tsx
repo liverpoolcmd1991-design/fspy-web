@@ -95,6 +95,7 @@ const SNAPSHOT_SLOTS: { index: 0 | 1 | 2 | 3; label: string }[] = [
 
 export default function SettingsPanel() {
   const modelInputRef = useRef<HTMLInputElement | null>(null)
+  const [showAllSceneTools, setShowAllSceneTools] = useState(false)
 
   const globalSettings = useFSpyStore((s) => s.globalSettings)
   const calibrationSettingsBase = useFSpyStore((s) => s.calibrationSettingsBase)
@@ -837,6 +838,52 @@ export default function SettingsPanel() {
             </div>
           </div>
 
+          {/* Step 1 -> Step 2 Next Action Bridge Card */}
+          <div className='mx-3 mb-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/35 space-y-2'>
+            <div className='flex items-center justify-between'>
+              <span className='text-[11px] font-bold text-amber-300'>
+                Ready for Step 2: Turn Photo into 3D?
+              </span>
+              <span className='text-[9.5px] font-mono text-amber-200/80'>
+                {solverResult.cameraParameters ? 'Camera Solved' : 'Align Lines'}
+              </span>
+            </div>
+            <p className='text-[10.5px] text-zinc-300 leading-snug'>
+              1. Align <strong className='text-red-400'>Red</strong> &amp;{' '}
+              <strong className='text-emerald-400'>Green</strong> lines with floor/wall edges.
+              <br />
+              2. Drag the <strong className='text-amber-300'>Yellow Crosshair</strong> on the photo to a floor corner, then click below:
+            </p>
+            <div className='grid grid-cols-2 gap-1.5'>
+              <button
+                type='button'
+                onClick={() => {
+                  setActiveSidebarTab('scene')
+                  showToast('Step 2: Fit the 3D room/boxes on your photo, or click 3D Orbit View!')
+                }}
+                className='py-1.5 px-2 rounded bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-[11px] transition-colors cursor-pointer'
+              >
+                Step 2: 3D Scene →
+              </button>
+              <button
+                type='button'
+                onClick={() => {
+                  setActiveSidebarTab('scene')
+                  setSceneBlockout({
+                    enabled: true,
+                    projectPhotoTexture: true,
+                    freeOrbitMode: true
+                  })
+                  showToast('3D Orbit View: Left-drag to rotate around your 3D photo scene!')
+                }}
+                className='py-1.5 px-2 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-200 font-semibold text-[11px] flex items-center justify-center gap-1 transition-colors cursor-pointer'
+              >
+                <Orbit className='w-3 h-3 text-sky-300 shrink-0' />
+                <span>Instant 3D Orbit</span>
+              </button>
+            </div>
+          </div>
+
       {/* Automatic EXIF Metadata Card if detected (Opt-in Apply button) */}
       {hasExifInfo && (
         <div className='mx-3 mt-3 p-2.5 rounded-md bg-amber-500/10 border border-amber-500/25 space-y-1.5'>
@@ -1136,130 +1183,224 @@ export default function SettingsPanel() {
 
           {sceneBlockout.enabled && (
             <div className='space-y-3'>
-              {/* STEP 1: Clear Mode Switcher: Edit Handles on Photo vs Orbit 3D View */}
-              <div className='space-y-1.5'>
-                <div className='text-[10px] font-mono uppercase tracking-wider text-zinc-400'>
-                  View Mode (Switch Anytime)
+              {/* BEGINNER 3-STEP QUICK-START WIZARD */}
+              <div className='rounded-lg bg-zinc-950/90 border border-sky-500/40 p-2.5 space-y-2.5'>
+                <div className='flex items-center justify-between'>
+                  <span className='text-[11px] font-bold text-sky-300'>
+                    How to Turn Your Photo into 3D (3 Easy Steps)
+                  </span>
                 </div>
-                <div className='grid grid-cols-2 gap-1 p-1 rounded-lg bg-zinc-950 border border-zinc-800'>
-                  <button
-                    type='button'
-                    onClick={() =>
-                      setSceneBlockout({
-                        freeOrbitMode: false,
-                        showViewportHandles: true
-                      })
-                    }
-                    className={`py-1.5 px-2 rounded text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
-                      !sceneBlockout.freeOrbitMode
-                        ? 'bg-amber-500 text-zinc-950 shadow-xs'
-                        : 'text-zinc-300 hover:bg-zinc-900'
-                    }`}
-                  >
-                    <MousePointerClick className='w-3.5 h-3.5' />
-                    <span>Edit on Photo</span>
-                  </button>
-                  <button
-                    type='button'
-                    onClick={() =>
-                      setSceneBlockout({
-                        freeOrbitMode: true
-                      })
-                    }
-                    className={`py-1.5 px-2 rounded text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
-                      sceneBlockout.freeOrbitMode
-                        ? 'bg-sky-500 text-zinc-950 shadow-xs'
-                        : 'text-zinc-300 hover:bg-zinc-900'
-                    }`}
-                  >
-                    <Orbit className='w-3.5 h-3.5' />
-                    <span>3D Orbit View</span>
-                  </button>
-                </div>
-              </div>
 
-              {/* Compact Display Options */}
-              <div className='bg-zinc-950/60 rounded-lg p-2 border border-zinc-800/80 space-y-1.5'>
-                <Checkbox
-                  title='Project photo texture onto 3D geometry'
-                  isSelected={sceneBlockout.projectPhotoTexture}
-                  onChange={(projectPhotoTexture) =>
-                    setSceneBlockout({ projectPhotoTexture })
-                  }
-                />
-                <Checkbox
-                  title='Show 3D wireframe outlines'
-                  isSelected={sceneBlockout.wireframeOverlay}
-                  onChange={(wireframeOverlay) =>
-                    setSceneBlockout({ wireframeOverlay })
-                  }
-                />
-                <Checkbox
-                  title='Auto-heal wall behind cutouts & boxes'
-                  isSelected={sceneBlockout.inpaintOccludedBackground}
-                  onChange={(inpaintOccludedBackground) =>
-                    setSceneBlockout({ inpaintOccludedBackground })
-                  }
-                />
-                {sceneBlockout.inpaintOccludedBackground && (
-                  <div className='flex items-center gap-2 text-[11px] pl-1 pt-0.5'>
-                    <span className='w-16 text-zinc-400'>Heal Margin</span>
-                    <input
-                      type='range'
-                      min={2}
-                      max={18}
-                      step={1}
-                      value={sceneBlockout.inpaintDilationPx}
-                      onChange={(e) =>
+                {/* Step A: 1-Click Starter Templates */}
+                <div className='space-y-1'>
+                  <div className='text-[10px] font-semibold text-amber-300'>
+                    1. Pick What Your Photo Shows (1-Click Preset):
+                  </div>
+                  <div className='grid grid-cols-3 gap-1'>
+                    <button
+                      type='button'
+                      onClick={() => {
+                        activateSceneToolAndEnable('room')
                         setSceneBlockout({
-                          inpaintDilationPx: parseInt(e.target.value, 10)
+                          enabled: true,
+                          roomShellType: 'interior-room',
+                          projectPhotoTexture: true,
+                          freeOrbitMode: false
+                        })
+                        showToast('Applied 5-Wall Indoor Room / Hallway preset! Adjust Width/Depth/Height below.')
+                      }}
+                      className={`px-1.5 py-1.5 rounded border text-[10px] font-medium text-center transition-colors cursor-pointer ${
+                        activeSceneTool === 'room' &&
+                        sceneBlockout.roomShellType === 'interior-room'
+                          ? 'bg-sky-500/25 border-sky-400 text-sky-200 font-semibold'
+                          : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+                      }`}
+                    >
+                      Indoor Room
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => {
+                        activateSceneToolAndEnable('room')
+                        setSceneBlockout({
+                          enabled: true,
+                          roomShellType: 'corner-stage',
+                          projectPhotoTexture: true,
+                          freeOrbitMode: false
+                        })
+                        showToast('Applied Floor + 2 Corner Walls preset! Drag Yellow Origin to the corner.')
+                      }}
+                      className={`px-1.5 py-1.5 rounded border text-[10px] font-medium text-center transition-colors cursor-pointer ${
+                        activeSceneTool === 'room' &&
+                        sceneBlockout.roomShellType === 'corner-stage'
+                          ? 'bg-sky-500/25 border-sky-400 text-sky-200 font-semibold'
+                          : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+                      }`}
+                    >
+                      Corner Walls
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => {
+                        activateSceneToolAndEnable('boxes')
+                        setSceneBlockout({
+                          enabled: true,
+                          roomShellType: 'none',
+                          projectPhotoTexture: true,
+                          freeOrbitMode: false,
+                          showViewportHandles: true
+                        })
+                        showToast('3D Box Mode: Drag the Sky-Blue handles (XY Move, W, D, Z↑) on the photo!')
+                      }}
+                      className={`px-1.5 py-1.5 rounded border text-[10px] font-medium text-center transition-colors cursor-pointer ${
+                        activeSceneTool === 'boxes' &&
+                        sceneBlockout.roomShellType === 'none'
+                          ? 'bg-amber-500/25 border-amber-400 text-amber-200 font-semibold'
+                          : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+                      }`}
+                    >
+                      3D Box Object
+                    </button>
+                  </div>
+                </div>
+
+                {/* Step B: Align on Photo */}
+                <div className='text-[10.5px] text-zinc-300 leading-snug bg-zinc-900/70 p-2 rounded border border-zinc-800/80'>
+                  <span className='font-semibold text-amber-300'>
+                    2. Align on Photo:
+                  </span>{' '}
+                  Drag the <strong className='text-amber-200'>Yellow Crosshair</strong> on the photo to your floor corner, then adjust the sliders below (or drag the <strong className='text-sky-300'>Blue Handles</strong> on the photo) until the wireframe matches your image.
+                </div>
+
+                {/* Step C: Big 1-Click 3D Orbit & Export Buttons */}
+                <div className='space-y-1.5'>
+                  <div className='text-[10px] font-semibold text-sky-300'>
+                    3. See Your Photo in Interactive 3D:
+                  </div>
+                  <div className='grid grid-cols-2 gap-1.5'>
+                    <button
+                      type='button'
+                      onClick={() =>
+                        setSceneBlockout({
+                          freeOrbitMode: !sceneBlockout.freeOrbitMode,
+                          showViewportHandles: true
                         })
                       }
-                    />
-                    <span className='w-8 text-right font-mono tabular-nums text-zinc-300'>
-                      {sceneBlockout.inpaintDilationPx}px
-                    </span>
+                      className={`py-2 px-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                        sceneBlockout.freeOrbitMode
+                          ? 'bg-amber-500 hover:bg-amber-400 text-zinc-950'
+                          : 'bg-sky-500 hover:bg-sky-400 text-zinc-950'
+                      }`}
+                    >
+                      {sceneBlockout.freeOrbitMode ? (
+                        <>
+                          <MousePointerClick className='w-3.5 h-3.5 shrink-0' />
+                          <span>Edit on Photo</span>
+                        </>
+                      ) : (
+                        <>
+                          <Orbit className='w-3.5 h-3.5 shrink-0' />
+                          <span>3D Orbit View</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type='button'
+                      onClick={() => {
+                        void handleExportReconstructedGLB()
+                      }}
+                      className='py-2 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer'
+                    >
+                      <Download className='w-3.5 h-3.5 shrink-0' />
+                      <span>Export .GLB</span>
+                    </button>
                   </div>
-                )}
+                </div>
               </div>
 
-              {/* STEP 2: Visual 3D Tool Palette Grid ("Pick What to Add or Edit") */}
+              {/* STEP 2: Simplified 4 Core Tools + Expandable Architectural Tools */}
               <div className='space-y-1.5 pt-1 border-t border-zinc-800/80'>
                 <div className='flex items-center justify-between'>
                   <span className='text-[10.5px] font-semibold uppercase tracking-wider text-zinc-300'>
-                    Select 3D Tool to Edit on Photo
+                    What Do You Want to Edit?
                   </span>
-                  <span className='text-[9.5px] font-mono text-zinc-500'>
-                    13 Tools
-                  </span>
+                  <button
+                    type='button'
+                    onClick={() => setShowAllSceneTools((prev) => !prev)}
+                    className='text-[10px] font-medium text-sky-400 hover:text-sky-300 cursor-pointer'
+                  >
+                    {showAllSceneTools ? 'Show Basic (4) ▴' : 'All 13 Tools ▾'}
+                  </button>
                 </div>
 
-                <div className='grid grid-cols-3 gap-1'>
-                  {sceneToolsPalette.map((item) => {
+                {/* 4 Essential Beginner Tools in a clean 2x2 grid */}
+                <div className='grid grid-cols-2 gap-1.5'>
+                  {sceneToolsPalette.slice(0, 4).map((item) => {
                     const isSelected = activeSceneTool === item.id
                     return (
                       <button
                         key={item.id}
                         type='button'
                         onClick={() => activateSceneToolAndEnable(item.id)}
-                        className={`relative px-1.5 py-1.5 rounded-md border text-left transition-all cursor-pointer ${
+                        className={`relative px-2.5 py-2 rounded-md border text-left transition-all cursor-pointer ${
                           isSelected
                             ? `${item.accent} font-semibold shadow-xs ring-1 ring-white/15`
                             : 'bg-zinc-900/90 hover:bg-zinc-800/90 border-zinc-800 text-zinc-300'
                         }`}
                       >
-                        <div className='text-[10px] leading-tight truncate'>
-                          {item.label}
-                        </div>
-                        {item.count !== undefined && item.count > 0 && (
-                          <span className='mt-0.5 inline-block text-[9px] font-mono px-1 rounded bg-black/40 text-zinc-200'>
-                            {item.count} active
+                        <div className='flex items-center justify-between gap-1'>
+                          <span className='text-[11px] leading-tight truncate'>
+                            {item.label}
                           </span>
-                        )}
+                          {item.count !== undefined && item.count > 0 && (
+                            <span className='text-[9px] font-mono px-1 rounded bg-black/40 text-zinc-200 shrink-0'>
+                              {item.count}
+                            </span>
+                          )}
+                        </div>
                       </button>
                     )
                   })}
                 </div>
+
+                {/* Optional Advanced Architectural Tools (Auto-shown if user selects one or clicks "All 13 Tools") */}
+                {(showAllSceneTools ||
+                  sceneToolsPalette
+                    .slice(4)
+                    .some((t) => t.id === activeSceneTool)) && (
+                  <div className='pt-1 space-y-1'>
+                    <div className='text-[9.5px] font-mono uppercase text-zinc-400'>
+                      More Architectural 3D Tools
+                    </div>
+                    <div className='grid grid-cols-3 gap-1'>
+                      {sceneToolsPalette.slice(4).map((item) => {
+                        const isSelected = activeSceneTool === item.id
+                        return (
+                          <button
+                            key={item.id}
+                            type='button'
+                            onClick={() => activateSceneToolAndEnable(item.id)}
+                            className={`relative px-1.5 py-1.5 rounded-md border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? `${item.accent} font-semibold shadow-xs ring-1 ring-white/15`
+                                : 'bg-zinc-900/90 hover:bg-zinc-800/90 border-zinc-800 text-zinc-300'
+                            }`}
+                          >
+                            <div className='text-[10px] leading-tight truncate'>
+                              {item.label}
+                            </div>
+                            {item.count !== undefined && item.count > 0 && (
+                              <span className='mt-0.5 inline-block text-[9px] font-mono px-1 rounded bg-black/40 text-zinc-200'>
+                                {item.count} active
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* STEP 3: Active Tool Instruction Banner + Quick-Add Button */}
@@ -1286,6 +1427,31 @@ export default function SettingsPanel() {
                 <p className='text-[10.5px] text-zinc-200 leading-snug'>
                   <strong>How to use:</strong> {currentSceneToolMeta.shortHint}
                 </p>
+              </div>
+
+              {/* Compact Display Options */}
+              <div className='bg-zinc-950/60 rounded-lg p-2 border border-zinc-800/80 space-y-1.5'>
+                <Checkbox
+                  title='Project photo texture onto 3D geometry'
+                  isSelected={sceneBlockout.projectPhotoTexture}
+                  onChange={(projectPhotoTexture) =>
+                    setSceneBlockout({ projectPhotoTexture })
+                  }
+                />
+                <Checkbox
+                  title='Show 3D wireframe outlines'
+                  isSelected={sceneBlockout.wireframeOverlay}
+                  onChange={(wireframeOverlay) =>
+                    setSceneBlockout({ wireframeOverlay })
+                  }
+                />
+                <Checkbox
+                  title='Auto-heal wall behind cutouts & boxes (in 3D Orbit)'
+                  isSelected={sceneBlockout.inpaintOccludedBackground}
+                  onChange={(inpaintOccludedBackground) =>
+                    setSceneBlockout({ inpaintOccludedBackground })
+                  }
+                />
               </div>
 
               {/* Room / Stage Shell Controls (Shown when 'room' is selected) */}

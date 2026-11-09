@@ -2478,10 +2478,60 @@ export const useFSpyStore = create<FSpyStoreState>()(
       },
 
       setActiveSidebarTab: (activeSidebarTab) => {
-        set({
+        const state = get()
+        const updates: Partial<FSpyStoreState> = {
           activeSidebarTab,
-          uiState: { ...get().uiState, sidePanelsAreVisible: true }
-        })
+          uiState: { ...state.uiState, sidePanelsAreVisible: true }
+        }
+        if (activeSidebarTab === 'calibrate') {
+          updates.sceneBlockout = {
+            ...state.sceneBlockout,
+            freeOrbitMode: false
+          }
+          updates.parallaxAnimator = {
+            ...state.parallaxAnimator,
+            enabled: false,
+            isPlaying: false
+          }
+        } else if (activeSidebarTab === 'scene') {
+          updates.sceneBlockout = {
+            ...state.sceneBlockout,
+            enabled: true,
+            showViewportHandles: true
+          }
+          updates.parallaxAnimator = {
+            ...state.parallaxAnimator,
+            enabled: false,
+            isPlaying: false
+          }
+        } else if (activeSidebarTab === 'pbr') {
+          updates.textureUnwarp = {
+            ...state.textureUnwarp,
+            enabled: true
+          }
+          updates.sceneBlockout = {
+            ...state.sceneBlockout,
+            freeOrbitMode: false
+          }
+          updates.parallaxAnimator = {
+            ...state.parallaxAnimator,
+            enabled: false,
+            isPlaying: false
+          }
+        } else if (activeSidebarTab === 'animate') {
+          updates.sceneBlockout = {
+            ...state.sceneBlockout,
+            enabled: true,
+            projectPhotoTexture: true,
+            freeOrbitMode: false
+          }
+          updates.parallaxAnimator = {
+            ...state.parallaxAnimator,
+            enabled: true,
+            isPlaying: true
+          }
+        }
+        set(updates)
       },
 
       setActiveSceneTool: (activeSceneTool) => {

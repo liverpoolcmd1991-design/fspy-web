@@ -1998,7 +1998,8 @@ function createOcclusionInpaintedBackgroundTexture(
 export function buildReconstructedSceneGroup(
   rawConfig: SceneBlockoutConfig,
   cameraParameters: CameraParameters,
-  photoTexture: THREE.Texture | null
+  photoTexture: THREE.Texture | null,
+  enableBackgroundInpaint = true
 ): THREE.Group {
   const rootGroup = new THREE.Group()
   rootGroup.name = 'fSpy_Reconstructed_Scene'
@@ -2087,8 +2088,9 @@ export function buildReconstructedSceneGroup(
       ? photoTexture.image
       : null
 
-  // Optional Background De-Ghosting (Inpainted texture for Room Shell walls & floor)
+  // Optional Background De-Ghosting (Inpainted texture for Room Shell walls & floor when orbiting/exporting)
   const inpaintedRoomTex =
+    enableBackgroundInpaint &&
     config.projectPhotoTexture &&
     config.inpaintOccludedBackground &&
     sourceImageEl
@@ -5313,10 +5315,28 @@ export async function exportReconstructedSceneGLB(
         exportGroup.updateMatrixWorld(true)
         gltfRoot.add(exportGroup)
 
+        const cleanupExportResources = () => {
+          exportGroup.traverse((node) => {
+            const mesh = node as THREE.Mesh
+            if (mesh.geometry) mesh.geometry.dispose()
+            const rawMat = mesh.material
+            if (rawMat) {
+              const mats = Array.isArray(rawMat) ? rawMat : [rawMat]
+              mats.forEach((m) => {
+                const std = m as THREE.MeshBasicMaterial
+                if (std.map && std.map !== texture) std.map.dispose()
+                m.dispose()
+              })
+            }
+          })
+          texture.dispose()
+        }
+
         const exporter = new GLTFExporter()
         exporter.parse(
           gltfRoot,
           (result) => {
+            cleanupExportResources()
             if (result instanceof ArrayBuffer) {
               const safeName =
                 (projectName || 'fSpy_Scene')
@@ -5330,6 +5350,7 @@ export async function exportReconstructedSceneGLB(
             }
           },
           () => {
+            cleanupExportResources()
             resolve(false)
           },
           { binary: true }

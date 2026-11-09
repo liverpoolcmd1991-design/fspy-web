@@ -46,6 +46,64 @@ const isSoftwareGl = (() => {
   return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu)
 })()
 
+/**
+ * Recursively disposes all BufferGeometries, Materials, and non-shared CanvasTextures
+ * inside a Three.js Object3D subtree to prevent GPU VRAM / browser RAM leaks.
+ */
+function disposeObjectSubtree(
+  root: THREE.Object3D,
+  sharedPhotoTexture: THREE.Texture | null
+) {
+  const disposedGeometries = new Set<THREE.BufferGeometry>()
+  const disposedMaterials = new Set<THREE.Material>()
+  const disposedTextures = new Set<THREE.Texture>()
+
+  root.traverse((node) => {
+    const mesh = node as THREE.Mesh | THREE.LineSegments | THREE.Line
+    if (mesh.geometry && !disposedGeometries.has(mesh.geometry)) {
+      disposedGeometries.add(mesh.geometry)
+      mesh.geometry.dispose()
+    }
+    const rawMat = (mesh as THREE.Mesh).material
+    if (!rawMat) return
+    const materials = Array.isArray(rawMat) ? rawMat : [rawMat]
+    for (const mat of materials) {
+      if (!mat || disposedMaterials.has(mat)) continue
+      disposedMaterials.add(mat)
+      const matWithMap = mat as THREE.MeshBasicMaterial &
+        THREE.MeshStandardMaterial
+      if (
+        matWithMap.map &&
+        matWithMap.map !== sharedPhotoTexture &&
+        !disposedTextures.has(matWithMap.map)
+      ) {
+        disposedTextures.add(matWithMap.map)
+        matWithMap.map.dispose()
+      }
+      if (
+        matWithMap.alphaMap &&
+        matWithMap.alphaMap !== sharedPhotoTexture &&
+        !disposedTextures.has(matWithMap.alphaMap)
+      ) {
+        disposedTextures.add(matWithMap.alphaMap)
+        matWithMap.alphaMap.dispose()
+      }
+      mat.dispose()
+    }
+  })
+}
+
+function clearAndDisposeGroup(
+  group: THREE.Group,
+  sharedPhotoTexture: THREE.Texture | null
+) {
+  while (group.children.length > 0) {
+    const child = group.children[0]
+    group.remove(child)
+    disposeObjectSubtree(child, sharedPhotoTexture)
+  }
+}
+
 function enableMeshShadows(root: THREE.Object3D) {
   root.traverse((node) => {
     if ((node as THREE.Mesh).isMesh) {
@@ -106,8 +164,15 @@ function buildPresetGroup(
 
     const legGeo = new THREE.CylinderGeometry(0.085, 0.065, 0.86, 16)
     legGeo.rotateX(Math.PI / 2)
-    const leftLeg = new THREE.Mesh(legGeo.clone().translate(-0.12, 0, 0.47), bodyMat)
-    const rightLeg = new THREE.Mesh(legGeo.clone().translate(0.12, 0, 0.47), bodyMat)
+    const leftLeg = new THREE.Mesh(
+      legGeo.clone().translate(-0.12, 0, 0.47),
+      bodyMat
+    )
+    const rightLeg = new THREE.Mesh(
+      legGeo.clone().translate(0.12, 0, 0.47),
+      bodyMat
+    )
+    legGeo.dispose()
     group.add(leftLeg, rightLeg)
 
     const torsoGeo = new THREE.BoxGeometry(0.44, 0.24, 0.6)
@@ -116,8 +181,11 @@ function buildPresetGroup(
 
     const armGeo = new THREE.CylinderGeometry(0.06, 0.05, 0.58, 14)
     armGeo.rotateX(Math.PI / 2)
-    group.add(new THREE.Mesh(armGeo.clone().translate(-0.29, 0, 1.18), bodyMat))
+    group.add(
+      new THREE.Mesh(armGeo.clone().translate(-0.29, 0, 1.18), bodyMat)
+    )
     group.add(new THREE.Mesh(armGeo.clone().translate(0.29, 0, 1.18), bodyMat))
+    armGeo.dispose()
 
     const headGeo = new THREE.SphereGeometry(0.12, 20, 20)
     headGeo.translate(0, 0, 1.68)
@@ -130,6 +198,7 @@ function buildPresetGroup(
     const colGeo = new THREE.BoxGeometry(0.32, 0.32, 2.1)
     group.add(new THREE.Mesh(colGeo.clone().translate(-0.78, 0, 1.13), bodyMat))
     group.add(new THREE.Mesh(colGeo.clone().translate(0.78, 0, 1.13), bodyMat))
+    colGeo.dispose()
 
     const lintelGeo = new THREE.BoxGeometry(2.05, 0.42, 0.34)
     lintelGeo.translate(0, 0, 2.35)
@@ -155,12 +224,17 @@ function buildPresetGroup(
       wMesh.position.set(wx, wy, 0.24)
       group.add(wMesh)
     })
+    wheelGeo.dispose()
   } else if (preset === 'checker-floor') {
     const tileSize = 0.5
     const half = 3
     for (let ix = -half; ix < half; ix++) {
       for (let iy = -half; iy < half; iy++) {
-        const tileGeo = new THREE.BoxGeometry(tileSize * 0.96, tileSize * 0.96, 0.03)
+        const tileGeo = new THREE.BoxGeometry(
+          tileSize * 0.96,
+          tileSize * 0.96,
+          0.03
+        )
         tileGeo.translate(
           (ix + 0.5) * tileSize,
           (iy + 0.5) * tileSize,
@@ -225,6 +299,7 @@ export default function ThreeOverlay({
   const mountRef = useRef<HTMLDivElement>(null)
   const requestRenderRef = useRef<(() => void) | null>(null)
   const freeOrbitRef = useRef(false)
+  const photoTextureRef = useRef<THREE.Texture | null>(null)
   const [photoTexture, setPhotoTexture] = useState<THREE.Texture | null>(null)
 
   const sceneObjectsRef = useRef<{
@@ -248,6 +323,7 @@ export default function ThreeOverlay({
     visible || sceneBlockout.enabled || parallaxAnimator.enabled
   const isFreeOrbit = sceneBlockout.enabled && sceneBlockout.freeOrbitMode
   freeOrbitRef.current = isFreeOrbit
+  photoTextureRef.current = photoTexture
 
   const aabbWidth = Math.max(1, Math.round(AABBOps.width(imageAABB)))
   const aabbHeight = Math.max(1, Math.round(AABBOps.height(imageAABB)))
@@ -286,7 +362,7 @@ export default function ThreeOverlay({
     }
   }, [imageUrl])
 
-  // Initialize WebGL scene
+  // Initialize WebGL scene once on mount (mountRef is ALWAYS rendered in the DOM)
   useEffect(() => {
     const container = mountRef.current
     if (!container) return
@@ -305,6 +381,18 @@ export default function ThreeOverlay({
     )
     renderer.setClearColor(0x000000, 0)
     renderer.domElement.id = 'fspy-three-webgl-canvas'
+
+    const handleContextLost = (e: Event) => {
+      e.preventDefault()
+    }
+    const handleContextRestored = () => {
+      requestRenderRef.current?.()
+    }
+    renderer.domElement.addEventListener('webglcontextlost', handleContextLost)
+    renderer.domElement.addEventListener(
+      'webglcontextrestored',
+      handleContextRestored
+    )
 
     container.appendChild(renderer.domElement)
 
@@ -381,10 +469,9 @@ export default function ThreeOverlay({
     // Visual 3D Sun Direction Indicator
     const sunIndicatorGroup = new THREE.Group()
     sunIndicatorGroup.visible = false
-    const sunOrb = new THREE.Mesh(
-      new THREE.SphereGeometry(0.14, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
-    )
+    const sunOrbGeo = new THREE.SphereGeometry(0.14, 16, 16)
+    const sunOrbMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
+    const sunOrb = new THREE.Mesh(sunOrbGeo, sunOrbMat)
     sunIndicatorGroup.add(sunOrb)
     rootRig.add(sunIndicatorGroup)
 
@@ -400,7 +487,9 @@ export default function ThreeOverlay({
 
     function afterDraw(cb: () => void) {
       const gl = renderer.getContext() as WebGL2RenderingContext
-      const sync = gl.fenceSync ? gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0) : null
+      const sync = gl.fenceSync
+        ? gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
+        : null
       gl.flush()
       if (!sync) {
         frameId = window.setTimeout(cb, 80)
@@ -466,6 +555,22 @@ export default function ThreeOverlay({
       clearTimeout(frameId)
       orbitControls.removeEventListener('change', requestRender)
       orbitControls.dispose()
+      renderer.domElement.removeEventListener(
+        'webglcontextlost',
+        handleContextLost
+      )
+      renderer.domElement.removeEventListener(
+        'webglcontextrestored',
+        handleContextRestored
+      )
+      clearAndDisposeGroup(contentGroup, photoTextureRef.current)
+      clearAndDisposeGroup(blockoutContainer, photoTextureRef.current)
+      shadowPlaneGeo.dispose()
+      shadowCatcherMat.dispose()
+      sunOrbGeo.dispose()
+      sunOrbMat.dispose()
+      frustumHelper.dispose()
+      orbitGridHelper.geometry.dispose()
       requestRenderRef.current = null
       sceneObjectsRef.current = null
       envTexture.dispose()
@@ -482,10 +587,7 @@ export default function ThreeOverlay({
     if (!objs) return
     const { contentGroup } = objs
 
-    while (contentGroup.children.length > 0) {
-      const child = contentGroup.children[0]
-      contentGroup.remove(child)
-    }
+    clearAndDisposeGroup(contentGroup, photoTexture)
 
     if (!visible) {
       requestRenderRef.current?.()
@@ -496,7 +598,10 @@ export default function ThreeOverlay({
 
     if (preset === 'custom-model' && customModelUrl) {
       const normalizeAndAttach = (loadedObj: THREE.Object3D) => {
-        if (cancelled) return
+        if (cancelled) {
+          disposeObjectSubtree(loadedObj, photoTexture)
+          return
+        }
         loadedObj.rotation.x = Math.PI / 2
         loadedObj.updateMatrixWorld(true)
 
@@ -526,7 +631,8 @@ export default function ThreeOverlay({
             if (Array.isArray(mesh.material)) {
               mesh.material.forEach((m) => {
                 if ('wireframe' in m) {
-                  ;(m as THREE.MeshStandardMaterial).wireframe = proxyTransform.wireframe
+                  ;(m as THREE.MeshStandardMaterial).wireframe =
+                    proxyTransform.wireframe
                 }
               })
             } else if (mesh.material && 'wireframe' in mesh.material) {
@@ -561,7 +667,9 @@ export default function ThreeOverlay({
           },
           undefined,
           () => {
-            contentGroup.add(buildPresetGroup('calibration-rig', proxyTransform.wireframe))
+            contentGroup.add(
+              buildPresetGroup('calibration-rig', proxyTransform.wireframe)
+            )
             requestRenderRef.current?.()
           }
         )
@@ -574,7 +682,9 @@ export default function ThreeOverlay({
           },
           undefined,
           () => {
-            contentGroup.add(buildPresetGroup('calibration-rig', proxyTransform.wireframe))
+            contentGroup.add(
+              buildPresetGroup('calibration-rig', proxyTransform.wireframe)
+            )
             requestRenderRef.current?.()
           }
         )
@@ -588,36 +698,68 @@ export default function ThreeOverlay({
     return () => {
       cancelled = true
     }
-  }, [visible, preset, customModelUrl, customModelFormat, proxyTransform.wireframe])
+  }, [
+    visible,
+    preset,
+    customModelUrl,
+    customModelFormat,
+    proxyTransform.wireframe,
+    photoTexture
+  ])
 
-  // Rebuild 3D Scene Blockout + Camera-Projected UVs whenever sceneBlockout, cameraParameters, or photoTexture changes
+  // Rebuild 3D Scene Blockout + Camera-Projected UVs with proper GPU memory disposal & drag coalescing
   useEffect(() => {
     const objs = sceneObjectsRef.current
     if (!objs) return
     const { blockoutContainer } = objs
 
-    while (blockoutContainer.children.length > 0) {
-      const child = blockoutContainer.children[0]
-      blockoutContainer.remove(child)
+    if (!sceneBlockout.enabled && !parallaxAnimator.enabled) {
+      clearAndDisposeGroup(blockoutContainer, photoTexture)
+      requestRenderRef.current?.()
+      return
     }
 
-    if (sceneBlockout.enabled) {
+    const rebuild = () => {
+      clearAndDisposeGroup(blockoutContainer, photoTexture)
       const builtScene = buildReconstructedSceneGroup(
         sceneBlockout,
         cameraParameters,
-        photoTexture
+        photoTexture,
+        isFreeOrbit || parallaxAnimator.enabled
       )
       blockoutContainer.add(builtScene)
+      requestRenderRef.current?.()
     }
 
-    requestRenderRef.current?.()
-  }, [sceneBlockout, cameraParameters, photoTexture])
+    // Immediate build if container is empty (just turned on), otherwise coalesce rapid slider/handle drags
+    if (blockoutContainer.children.length === 0) {
+      rebuild()
+      return
+    }
+
+    const timer = window.setTimeout(rebuild, 24)
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [
+    sceneBlockout,
+    cameraParameters,
+    photoTexture,
+    isFreeOrbit,
+    parallaxAnimator.enabled
+  ])
 
   // Position Orbit Camera nicely near the calibrated photo camera when entering Free 3D Orbit Mode
   useEffect(() => {
     const objs = sceneObjectsRef.current
     if (!objs) return
-    const { orbitCamera, orbitControls, frustumHelper, orbitGridHelper, renderer } = objs
+    const {
+      orbitCamera,
+      orbitControls,
+      frustumHelper,
+      orbitGridHelper,
+      renderer
+    } = objs
 
     if (isFreeOrbit) {
       const m = cameraParameters.cameraTransform.matrix
@@ -670,10 +812,22 @@ export default function ThreeOverlay({
     const m = cameraParameters.cameraTransform.matrix
     const camMat = new THREE.Matrix4()
     camMat.set(
-      m[0][0], m[0][1], m[0][2], m[0][3],
-      m[1][0], m[1][1], m[1][2], m[1][3],
-      m[2][0], m[2][1], m[2][2], m[2][3],
-      0, 0, 0, 1
+      m[0][0],
+      m[0][1],
+      m[0][2],
+      m[0][3],
+      m[1][0],
+      m[1][1],
+      m[1][2],
+      m[1][3],
+      m[2][0],
+      m[2][1],
+      m[2][2],
+      m[2][3],
+      0,
+      0,
+      0,
+      1
     )
     camera.matrix.copy(camMat)
     camera.matrixWorld.copy(camMat)
@@ -686,23 +840,37 @@ export default function ThreeOverlay({
     const s = 1 / Math.tan(0.5 * cameraParameters.horizontalFieldOfView)
     const sx = aspect >= 1 ? s : s / aspect
     const sy = aspect >= 1 ? s * aspect : s
-    const px = cameraParameters.principalPoint.x * (aspect >= 1 ? 1 : 1 / aspect)
+    const px =
+      cameraParameters.principalPoint.x * (aspect >= 1 ? 1 : 1 / aspect)
     const py = cameraParameters.principalPoint.y * (aspect >= 1 ? aspect : 1)
     const n = 0.05
     const f = Math.max(12, computeSceneBaseScale(cameraParameters) * 18)
 
     camera.projectionMatrix.set(
-      sx, 0, -px, 0,
-      0, sy, -py, 0,
-      0, 0, -(f + n) / (f - n), (-2 * f * n) / (f - n),
-      0, 0, -1, 0
+      sx,
+      0,
+      -px,
+      0,
+      0,
+      sy,
+      -py,
+      0,
+      0,
+      0,
+      -(f + n) / (f - n),
+      (-2 * f * n) / (f - n),
+      0,
+      0,
+      -1,
+      0
     )
     camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert()
     frustumHelper.update()
 
     const vt = cameraParameters.viewTransform.matrix
     const translation = new Vector3D(vt[0][3], vt[1][3], vt[2][3])
-    const normFactor = translation.length * Math.atan(0.5 * cameraParameters.horizontalFieldOfView)
+    const normFactor =
+      translation.length * Math.atan(0.5 * cameraParameters.horizontalFieldOfView)
     const baseScale = Math.max(0.01, 0.28 * normFactor)
     const finalScale = baseScale * proxyTransform.scale
 
@@ -726,8 +894,10 @@ export default function ThreeOverlay({
       const azRad = (sunShadowConfig.azimuthDeg * Math.PI) / 180
       const elRad = (Math.max(4, sunShadowConfig.elevationDeg) * Math.PI) / 180
       const sunDist = 10 * Math.max(0.5, finalScale)
-      const sxPos = rootRig.position.x + sunDist * Math.cos(elRad) * Math.cos(azRad)
-      const syPos = rootRig.position.y + sunDist * Math.cos(elRad) * Math.sin(azRad)
+      const sxPos =
+        rootRig.position.x + sunDist * Math.cos(elRad) * Math.cos(azRad)
+      const syPos =
+        rootRig.position.y + sunDist * Math.cos(elRad) * Math.sin(azRad)
       const szPos = rootRig.position.z + sunDist * Math.sin(elRad)
 
       keyLight.position.set(sxPos, syPos, szPos)
@@ -764,7 +934,8 @@ export default function ThreeOverlay({
     isOverlayActive,
     visible,
     proxyTransform,
-    sunShadowConfig
+    sunShadowConfig,
+    sceneBlockout.enabled
   ])
 
   // Drive Cinematic 2.5D Parallax Camera Animator (either playing loop or manual timeline scrub)
@@ -777,10 +948,22 @@ export default function ThreeOverlay({
       if (!parallaxAnimator.enabled) {
         const m = cameraParameters.cameraTransform.matrix
         const camMat = new THREE.Matrix4().set(
-          m[0][0], m[0][1], m[0][2], m[0][3],
-          m[1][0], m[1][1], m[1][2], m[1][3],
-          m[2][0], m[2][1], m[2][2], m[2][3],
-          0, 0, 0, 1
+          m[0][0],
+          m[0][1],
+          m[0][2],
+          m[0][3],
+          m[1][0],
+          m[1][1],
+          m[1][2],
+          m[1][3],
+          m[2][0],
+          m[2][1],
+          m[2][2],
+          m[2][3],
+          0,
+          0,
+          0,
+          1
         )
         camera.matrix.copy(camMat)
         camera.matrixWorld.copy(camMat)
@@ -831,16 +1014,7 @@ export default function ThreeOverlay({
     return () => {
       cancelAnimationFrame(rafId)
     }
-  }, [
-    parallaxAnimator,
-    cameraParameters,
-    isOverlayActive,
-    isFreeOrbit
-  ])
-
-  if (!isOverlayActive) {
-    return null
-  }
+  }, [parallaxAnimator, cameraParameters, isOverlayActive, isFreeOrbit])
 
   return (
     <div
@@ -850,12 +1024,15 @@ export default function ThreeOverlay({
         left: imageAABB.xMin,
         top: imageAABB.yMin,
         width: aabbWidth,
-        height: aabbHeight
+        height: aabbHeight,
+        visibility: isOverlayActive ? 'visible' : 'hidden'
       }}
       className={
-        isFreeOrbit
-          ? 'pointer-events-auto z-25 cursor-grab active:cursor-grabbing ring-2 ring-sky-500/70 rounded-xs'
-          : 'pointer-events-none z-10'
+        !isOverlayActive
+          ? 'pointer-events-none z-0'
+          : isFreeOrbit
+            ? 'pointer-events-auto z-25 cursor-grab active:cursor-grabbing ring-2 ring-sky-500/70 rounded-xs'
+            : 'pointer-events-none z-10'
       }
     />
   )
